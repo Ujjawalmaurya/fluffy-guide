@@ -1,0 +1,41 @@
+SUCCESS [{'id': 'q1', 'question': 'What is your highest level of education completed?', 'type': 'text', 'options': []}, {'id': 'q2', 'question': 'Have you worked on any technology-related projects? If yes, briefly describe one.', 'type': 'text', 'options': []}, {'id': 'q3', 'question': 'Which of the following technical areas are you most interested in? (Select all that apply)', 'type': 'mcq', 'options': ['Web Development', 'Data Science', 'Artificial Intelligence', 'Cybersecurity', 'Cloud Computing', 'Networking']}, {'id': 'q4', 'question': 'How would you rate your proficiency in programming languages?', 'type': 'rating', 'options': ['1', '2', '3', '4', '5']}, {'id': 'q5', 'question': 'What type of career in technology are you most aspiring towards?', 'type': 'text', 'options': []}, {'id': 'q6', 'question': 'How important is higher education (e.g., a degree or certification) in achieving your career goals in technology?', 'type': 'rating', 'options': ['1', '2', '3', '4', '5']}]
+[32m2026-03-11 00:55:22[0m | [31m[1m[ONBOARDING  ][0m | [31m[1m ERROR [0m | [31m[1mRAW SARVAM RESPONSE: <think>
+ [
+  {
+    "id": "q1",
+    "question": "What is your highest level of education completed?",
+    "type": "text",
+    "options": []
+  },
+  {
+    "id": "q2",
+    "question": "Have you worked on any technology-related projects? If yes, briefly describe one.",
+    "type": "text",
+    "options": []
+  },
+  {
+    "id": "q3",
+    "question": "Which of the following technical areas are you most interested in? (Select all that apply)",
+    "type": "mcq",
+    "options": ["Web Development", "Data Science", "Artificial Intelligence", "Cybersecurity", "Cloud Computing", "Networking"]
+  },
+  {
+    "id": "q4",
+    "question": "How would you rate your proficiency in programming languages?",
+    "type": "rating",
+    "options": ["1", "2", "3", "4", "5"]
+  },
+  {
+    "id": "q5",
+    "question": "What type of career in technology are you most aspiring towards?",
+    "type": "text",
+    "options": []
+  },
+  {
+    "id": "q6",
+    "question": "How important is higher education (e.g., a degree or certification) in achieving your career goals in technology?",
+    "type": "rating",
+    "options": ["1", "2", "3", "4", "5"]
+  }
+][0m
+[32m2026-03-11 00:55:22[0m | [1m[ONBOARDING  ][0m | [1m INFO  [0m | [1mGenerated 6 questions for individual_youth via SarvamAI[0m

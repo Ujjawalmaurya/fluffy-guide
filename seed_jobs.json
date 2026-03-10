@@ -1,0 +1,287 @@
+[
+    {
+        "title": "Python Backend Developer",
+        "company": "Infosys",
+        "description": "Build scalable REST APIs using Python and FastAPI for enterprise applications. Experience with PostgreSQL and Redis preferred.",
+        "location_state": "Karnataka",
+        "location_city": "Bangalore",
+        "job_type": "full_time",
+        "work_mode": "hybrid",
+        "category": "technology",
+        "required_skills": [
+            "Python",
+            "FastAPI",
+            "PostgreSQL",
+            "Redis",
+            "Docker"
+        ],
+        "salary_min": 60000,
+        "salary_max": 100000,
+        "experience_min": 2
+    },
+    {
+        "title": "ITI Electrician",
+        "company": "L&T Construction",
+        "description": "Site electrician for large infrastructure projects. ITI certification required. Experience with HT/LT panels preferred.",
+        "location_state": "Maharashtra",
+        "location_city": "Pune",
+        "job_type": "full_time",
+        "work_mode": "onsite",
+        "category": "construction",
+        "required_skills": [
+            "Electrical Wiring",
+            "HT/LT Panels",
+            "Safety Compliance"
+        ],
+        "salary_min": 25000,
+        "salary_max": 35000,
+        "experience_min": 2
+    },
+    {
+        "title": "Delivery Executive",
+        "company": "Swiggy",
+        "description": "Last-mile delivery partner for food delivery in your city. Own a two-wheeler. Flexible working hours. Weekly payouts.",
+        "location_state": "Uttar Pradesh",
+        "location_city": "Lucknow",
+        "job_type": "gig",
+        "work_mode": "onsite",
+        "category": "logistics",
+        "required_skills": [
+            "Driving",
+            "Navigation",
+            "Customer Service"
+        ],
+        "salary_min": 18000,
+        "salary_max": 30000,
+        "experience_min": 0
+    },
+    {
+        "title": "Staff Nurse",
+        "company": "Apollo Hospitals",
+        "description": "Registered nurse for ICU ward. B.Sc Nursing required. BCLS certification preferred. Rotational shifts.",
+        "location_state": "Tamil Nadu",
+        "location_city": "Chennai",
+        "job_type": "full_time",
+        "work_mode": "onsite",
+        "category": "healthcare",
+        "required_skills": [
+            "Nursing",
+            "Patient Care",
+            "ICU",
+            "First Aid",
+            "BCLS"
+        ],
+        "salary_min": 30000,
+        "salary_max": 45000,
+        "experience_min": 1
+    },
+    {
+        "title": "React Frontend Developer",
+        "company": "Freshworks",
+        "description": "Build customer-facing SaaS product UIs. Expertise in React 18, TypeScript, and TanStack Query. Strong CSS skills required.",
+        "location_state": "Tamil Nadu",
+        "location_city": "Chennai",
+        "job_type": "full_time",
+        "work_mode": "remote",
+        "category": "technology",
+        "required_skills": [
+            "React",
+            "TypeScript",
+            "CSS",
+            "JavaScript",
+            "REST APIs"
+        ],
+        "salary_min": 70000,
+        "salary_max": 130000,
+        "experience_min": 2
+    },
+    {
+        "title": "Automobile Mechanic",
+        "company": "Maruti Suzuki Service Centre",
+        "description": "Diagnose and repair Maruti vehicles. Diploma in Auto Engineering or 3+ years experience. OEM training provided.",
+        "location_state": "Haryana",
+        "location_city": "Gurugram",
+        "job_type": "full_time",
+        "work_mode": "onsite",
+        "category": "manufacturing",
+        "required_skills": [
+            "Mechanical Repair",
+            "Engine Repair",
+            "Diagnostics"
+        ],
+        "salary_min": 22000,
+        "salary_max": 38000,
+        "experience_min": 3
+    },
+    {
+        "title": "Tally Accountant",
+        "company": "Jain & Associates",
+        "description": "Handle day-to-day bookkeeping, GST filing, and bank reconciliation using Tally Prime. CA Inter or B.Com preferred.",
+        "location_state": "Rajasthan",
+        "location_city": "Jaipur",
+        "job_type": "full_time",
+        "work_mode": "onsite",
+        "category": "finance",
+        "required_skills": [
+            "Tally",
+            "GST",
+            "Accounting",
+            "Excel",
+            "TDS"
+        ],
+        "salary_min": 20000,
+        "salary_max": 32000,
+        "experience_min": 1
+    },
+    {
+        "title": "Farm Supervisor",
+        "company": "FPO Cooperative Punjab",
+        "description": "Supervise organic vegetable cultivation operations. Coordinate with 50+ farmer members. Agricultural diploma or 5 years field experience.",
+        "location_state": "Punjab",
+        "location_city": "Ludhiana",
+        "job_type": "full_time",
+        "work_mode": "onsite",
+        "category": "agriculture",
+        "required_skills": [
+            "Farming",
+            "Crop Management",
+            "Irrigation",
+            "Leadership"
+        ],
+        "salary_min": 18000,
+        "salary_max": 28000,
+        "experience_min": 4
+    },
+    {
+        "title": "Data Analyst",
+        "company": "Paytm",
+        "description": "Analyze transaction data to produce business insights. Python and SQL required. Power BI or Tableau preferred. Noida office.",
+        "location_state": "Uttar Pradesh",
+        "location_city": "Noida",
+        "job_type": "full_time",
+        "work_mode": "hybrid",
+        "category": "technology",
+        "required_skills": [
+            "Python",
+            "SQL",
+            "Data Analysis",
+            "Power BI",
+            "Excel"
+        ],
+        "salary_min": 55000,
+        "salary_max": 90000,
+        "experience_min": 1
+    },
+    {
+        "title": "Plumber",
+        "company": "Urban Company",
+        "description": "On-demand plumbing service professional. Own tools required. Flexible scheduling. Earn per job. Training provided.",
+        "location_state": "Delhi",
+        "location_city": "New Delhi",
+        "job_type": "gig",
+        "work_mode": "onsite",
+        "category": "construction",
+        "required_skills": [
+            "Plumbing",
+            "Pipe Fitting",
+            "Customer Service"
+        ],
+        "salary_min": 25000,
+        "salary_max": 50000,
+        "experience_min": 2
+    },
+    {
+        "title": "Garment Tailor",
+        "company": "Manyavar",
+        "description": "Expert tailor for ethnic wear alterations and custom stitching. Master in suits, sherwanis, salwar kameez. Full-time position in store.",
+        "location_state": "West Bengal",
+        "location_city": "Kolkata",
+        "job_type": "full_time",
+        "work_mode": "onsite",
+        "category": "retail",
+        "required_skills": [
+            "Tailoring",
+            "Embroidery",
+            "Pattern Making"
+        ],
+        "salary_min": 16000,
+        "salary_max": 24000,
+        "experience_min": 3
+    },
+    {
+        "title": "Digital Marketing Executive",
+        "company": "Nykaa",
+        "description": "Manage social media campaigns, SEO, and content strategy. Experience with Instagram Ads and Google Analytics required.",
+        "location_state": "Maharashtra",
+        "location_city": "Mumbai",
+        "job_type": "full_time",
+        "work_mode": "hybrid",
+        "category": "retail",
+        "required_skills": [
+            "Digital Marketing",
+            "SEO",
+            "Social Media",
+            "Content Writing",
+            "Google Analytics"
+        ],
+        "salary_min": 35000,
+        "salary_max": 60000,
+        "experience_min": 1
+    },
+    {
+        "title": "Heavy Vehicle Driver",
+        "company": "DTDC Logistics",
+        "description": "Drive 10-ton trucks for intercity cargo delivery. Valid HMV license required. Experience driving on NH highways preferred.",
+        "location_state": "Gujarat",
+        "location_city": "Surat",
+        "job_type": "full_time",
+        "work_mode": "onsite",
+        "category": "logistics",
+        "required_skills": [
+            "Driving",
+            "Heavy Vehicle",
+            "Navigation"
+        ],
+        "salary_min": 28000,
+        "salary_max": 45000,
+        "experience_min": 3
+    },
+    {
+        "title": "Hotel Cook",
+        "company": "Lemon Tree Hotels",
+        "description": "Continental and South Indian cuisine cook for hotel kitchen. ITI Hotel Management or 3 years hotel experience. Morning shift.",
+        "location_state": "Karnataka",
+        "location_city": "Mysore",
+        "job_type": "full_time",
+        "work_mode": "onsite",
+        "category": "hospitality",
+        "required_skills": [
+            "Cooking",
+            "Baking",
+            "Kitchen Management",
+            "Food Safety"
+        ],
+        "salary_min": 20000,
+        "salary_max": 32000,
+        "experience_min": 2
+    },
+    {
+        "title": "Government School Teacher",
+        "company": "Bihar Education Project Council",
+        "description": "Teach Mathematics and Science for Classes 6-8. B.Ed required. Hindi fluency essential. Regular state government pay scale.",
+        "location_state": "Bihar",
+        "location_city": "Patna",
+        "job_type": "full_time",
+        "work_mode": "onsite",
+        "category": "education",
+        "required_skills": [
+            "Teaching",
+            "Communication",
+            "Hindi",
+            "Mathematics"
+        ],
+        "salary_min": 30000,
+        "salary_max": 50000,
+        "experience_min": 0
+    }
+]

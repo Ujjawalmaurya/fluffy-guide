@@ -1,14 +1,48 @@
-from pydantic_settings import BaseSettings
+"""
+Backend config — reads all settings from .env via Pydantic BaseSettings.
+Single source of truth for env vars. Import `settings` everywhere.
+"""
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
+
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "sqlite:///./sql_app.db"
-    SECRET_KEY: str = "yoursecretkey"
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    GOOGLE_CLIENT_ID: str = ""
-    GOOGLE_CLIENT_SECRET: str = ""
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    class Config:
-        env_file = ".env"
+    # Supabase
+    supabase_url: str
+    supabase_service_key: str
 
+    # JWT
+    jwt_secret_key: str
+    jwt_algorithm: str = "HS256"
+    jwt_access_expire_minutes: int = 30
+    jwt_refresh_expire_days: int = 7
+
+    # OTP
+    otp_expire_minutes: int = 10
+    otp_length: int = 6
+
+    # SarvamAI
+    sarvam_api_key: str
+    sarvam_base_url: str = "https://api.sarvam.ai/v1"
+    sarvam_model: str = "sarvam-m"
+
+    # Admin
+    admin_secret: str
+
+    # App
+    app_env: str = "development"
+    app_host: str = "0.0.0.0"
+    app_port: int = 8000
+    log_level: str = "DEBUG"
+    cors_origins: str = "http://localhost:5173"
+
+    # Derived — parsed from cors_origins string
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",")]
+
+
+# Single shared instance — import this, not the class
 settings = Settings()
