@@ -87,13 +87,14 @@ async def compute_gap(user_id: str) -> dict:
     jobs = jobs_result.data or []
 
     if not jobs:
-        raise GAP_ANALYSIS_NO_JOBS()
-
-    total_jobs = len(jobs)
-    logger.info(
-        f"[GAP_ANALYSIS] Analyzing {total_jobs} jobs for "
-        f"user={user_id}. state={state}"
-    )
+        total_jobs = 0
+        logger.warning(f"[GAP_ANALYSIS] No job data found for state={state}. Analysis will only show strengths.")
+    else:
+        total_jobs = len(jobs)
+        logger.info(
+            f"[GAP_ANALYSIS] Analyzing {total_jobs} jobs for "
+            f"user={user_id}. state={state}"
+        )
 
     # Build required skills frequency map
     required_map = {}

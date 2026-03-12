@@ -71,10 +71,14 @@ async def get_or_compute_report(
         **(prefs_row.data[0] if prefs_row.data else {})
     }
 
-    # Build roadmap (Gemini call)
-    roadmap_data, enriched_gaps = await roadmap_builder.build_roadmap(
-        user_id, gap_data["gaps"], user_profile_data, gemini_provider
-    )
+    # Build roadmap (Gemini call) only if we have gaps
+    if gap_data["gaps"]:
+        roadmap_data, enriched_gaps = await roadmap_builder.build_roadmap(
+            user_id, gap_data["gaps"], user_profile_data, gemini_provider
+        )
+    else:
+        roadmap_data = {"roadmap": [], "motivational_note": "Keep building your skills!"}
+        enriched_gaps = []
 
     gap_data["gaps"] = enriched_gaps
 
