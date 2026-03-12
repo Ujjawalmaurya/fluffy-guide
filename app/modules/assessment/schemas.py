@@ -32,6 +32,7 @@ class StartAssessmentResponse(BaseModel):
   can_resume: bool      # True if returning to incomplete session
 
 class AnswerResponse(BaseModel):
+  session_id: str
   question: Optional[QuestionResponse] = None
   phase: int
   question_number: int

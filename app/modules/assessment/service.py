@@ -261,6 +261,7 @@ async def submit_answer(
     
     eligibility = await check_retake_eligibility(user_id)
     return {
+        "session_id": session_id,
         "question": question,
         "phase": question["phase"],
         "question_number": new_q_number,
@@ -323,6 +324,7 @@ async def _complete_assessment(
     
     eligibility = await check_retake_eligibility(user_id)
     return {
+        "session_id": session_id,
         "is_complete": True,
         "skills_found": skills,
         "career_goals": extracted.get("career_goals", []),
