@@ -10,3 +10,5 @@ pdfplumber
 python-multipart
 httpx
 python-dotenv
+openai==1.30.0
+google-generativeai==0.7.0

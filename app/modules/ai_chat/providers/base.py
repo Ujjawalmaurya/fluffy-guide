@@ -8,7 +8,7 @@ from typing import AsyncGenerator
 
 class ILLMProvider(ABC):
     @abstractmethod
-    async def complete(self, messages: list[dict], language: str = "en") -> str:
+    async def complete(self, messages: list[dict], language: str = "en", **kwargs) -> str:
         """Return full response as a string."""
 
     @abstractmethod

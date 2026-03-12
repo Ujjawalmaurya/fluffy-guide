@@ -22,7 +22,8 @@ class AuthService:
         otp = generate_otp()
         expires_at = (datetime.now(timezone.utc) + timedelta(minutes=settings.otp_expire_minutes)).isoformat()
         self.repo.create_otp(email, otp, expires_at)
-        # This is intentional — OTP goes to terminal, not email
+        # Print directly — loguru can buffer but print won't
+        print(f"\n{'='*40}\n OTP for {email} → {otp}\n{'='*40}\n", flush=True)
         log.info(f"OTP for {email} → {otp}")
         return otp
 

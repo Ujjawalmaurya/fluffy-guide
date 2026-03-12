@@ -16,9 +16,14 @@ class ProfileUpdateIn(BaseModel):
 
 
 class ParsedResumeOut(BaseModel):
-    skills_found: list[str]
-    education_hints: list[str]
-    experience_hints: list[str]
+    skills_found: list[dict]
+    education_hints: list[dict]
+    experience_hints: list[dict]
+    experience_level: Optional[str] = None
+    strengths: Optional[list[str]] = None
+    weaknesses: Optional[list[str]] = None
+    career_suggestions: Optional[list[str]] = None
+    skill_gap_analysis: Optional[str] = None
 
 
 class ProfileOut(BaseModel):

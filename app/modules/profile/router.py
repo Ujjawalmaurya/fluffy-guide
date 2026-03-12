@@ -36,7 +36,7 @@ async def upload_resume(
     service: ProfileService = Depends(_get_service),
 ):
     file_bytes = await resume.read()
-    result = service.upload_resume(
+    result = await service.upload_resume(
         user_id=current_user["id"],
         filename=resume.filename or "resume.pdf",
         content_type=resume.content_type or "",

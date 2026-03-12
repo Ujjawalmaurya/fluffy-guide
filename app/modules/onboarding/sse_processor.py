@@ -19,10 +19,23 @@ def _sse_event(step: int, progress: int, message: str, status: str) -> str:
 
 def _extract_skills_from_text(text: str) -> list[str]:
     """
-    Basic keyword match against 150 common Indian workforce skills.
-    Same list used by resume_parser.py. Returns matched skills.
+    Basic keyword match against common Indian workforce skills.
+    Used only for onboarding quick-extraction — not the same as resume parsing.
     """
-    from app.modules.profile.resume_parser import SKILL_KEYWORDS
+    # Common skills for quick keyword match during onboarding
+    SKILL_KEYWORDS = [
+        "python", "java", "javascript", "html", "css", "react", "nodejs", "sql",
+        "excel", "tally", "ms office", "word", "powerpoint", "data analysis",
+        "digital marketing", "seo", "social media", "content writing",
+        "communication", "english", "hindi", "leadership", "teamwork",
+        "driving", "welding", "plumbing", "electrician", "tailoring",
+        "cooking", "nursing", "patient care", "first aid",
+        "logistics", "supply chain", "warehouse", "inventory",
+        "accounting", "gst", "bookkeeping", "finance",
+        "customer service", "sales", "retail", "cashier",
+        "autocad", "photoshop", "video editing", "graphic design",
+        "machine operator", "quality control", "data entry",
+    ]
     text_lower = text.lower()
     return [skill for skill in SKILL_KEYWORDS if skill.lower() in text_lower]
 

@@ -27,24 +27,54 @@ class ProfileService:
         self.repo.update_profile(user_id, data.model_dump(exclude_unset=True))
         return self.repo.get_profile(user_id) or {}
 
-    def upload_resume(self, user_id: str, filename: str, content_type: str, file_bytes: bytes) -> dict:
-        if content_type not in ("application/pdf", "application/octet-stream") and not filename.lower().endswith(".pdf"):
+    async def upload_resume(self, user_id: str, filename: str, content_type: str, file_bytes: bytes) -> dict:
+        allowed_types = (
+            "application/pdf", 
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "text/plain",
+            "application/octet-stream"
+        )
+        ext = filename.lower().split(".")[-1] if "." in filename else ""
+        
+        if content_type not in allowed_types and ext not in ("pdf", "docx", "txt"):
             raise ResumeInvalid()
+            
         if len(file_bytes) > MAX_RESUME_SIZE:
             raise ResumeTooLarge()
 
-        result = parse_resume(file_bytes, filename)
+        from app.modules.ai_chat.providers.gemini import get_gemini_instance
+        result = await parse_resume(file_bytes, filename, content_type, user_id, get_gemini_instance())
+
         self.repo.upsert_enrichment(
             user_id=user_id,
             original_name=filename,
             raw_text=result["raw_text"],
             parsed=result["parsed"],
         )
-        log.info(f"Resume parsed for user={user_id}. Found {len(result['parsed']['skills'])} skills: {result['parsed']['skills'][:5]}")
+
+        # Merge parsed skills into user_skill_profiles — this feeds gap analysis
+        parsed_skills = result["parsed"].get("skills", [])
+        if parsed_skills:
+            from app.modules.skill_profile import aggregator as skill_aggregator
+            from app.modules.skill_profile.repository import SkillProfileRepository
+            from app.core.database import get_supabase
+            skill_repo = SkillProfileRepository(get_supabase())
+            await skill_aggregator.merge_from_resume(user_id, parsed_skills, skill_repo)
+            log.info(f"Skills merged into user_skill_profiles for user={user_id}. count={len(parsed_skills)}")
+        else:
+            log.warning(f"Resume parsed but no skills found for user={user_id}")
+
+        log.info(f"Resume parsed for user={user_id}. Found {len(parsed_skills)} skills")
+
         return {
-            "skills_found": result["parsed"]["skills"],
-            "education_hints": result["parsed"]["education"],
-            "experience_hints": result["parsed"]["experience"],
+            "skills_found": parsed_skills,
+            "education_hints": result["parsed"].get("education", []),
+            "experience_hints": result["parsed"].get("experience", []),
+            "experience_level": result["parsed"].get("experience_level"),
+            "strengths": result["parsed"].get("strengths", []),
+            "weaknesses": result["parsed"].get("weaknesses", []),
+            "career_suggestions": result["parsed"].get("career_suggestions", []),
+            "skill_gap_analysis": result["parsed"].get("skill_gap_analysis"),
         }
 
     def get_completion_score(self, user_id: str) -> dict:

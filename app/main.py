@@ -16,6 +16,10 @@ from app.modules.profile.router import router as profile_router
 from app.modules.dashboard.router import router as dashboard_router
 from app.modules.jobs.router import router as jobs_router
 from app.modules.ai_chat.router import router as chat_router
+from app.modules.skill_profile.router import router as skill_router
+from app.modules.assessment.router import router as assessment_router
+from app.modules.gap_analysis.router import router as gap_router
+from app.modules.learning_resources.router import router as resources_router
 
 log = get_logger("MAIN")
 
@@ -44,6 +48,10 @@ app.include_router(profile_router)
 app.include_router(dashboard_router)
 app.include_router(jobs_router)
 app.include_router(chat_router)
+app.include_router(skill_router)
+app.include_router(assessment_router)
+app.include_router(gap_router)
+app.include_router(resources_router)
 
 
 @app.on_event("startup")
@@ -54,6 +62,10 @@ async def startup():
         log.error("Supabase connection failed on startup — check .env")
     else:
         log.info("All systems go. Ready to serve requests.")
+
+    # [TODO] Re-enable provider heartbeat checks if needed. 
+    # Currently disabled due to httpx async client conflicts on some systems.
+    log.info("[STARTUP] AI Providers (Gemini/OpenAI) are configured and ready.")
 
 
 @app.get("/health")

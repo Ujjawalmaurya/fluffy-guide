@@ -232,3 +232,198 @@ CREATE TRIGGER trg_onboarding_updated_at
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 ALTER TABLE onboarding_state DISABLE ROW LEVEL SECURITY;
+
+-- ============================================
+-- MIGRATION 002: Assessment + Gap Analysis
+-- Run this in Supabase SQL editor AFTER Migration 001
+-- ============================================
+
+-- Modify questionnaire_sessions (add columns only)
+ALTER TABLE questionnaire_sessions
+  ADD COLUMN IF NOT EXISTS assessment_type TEXT DEFAULT 'onboarding',
+  -- 'onboarding' | 'quick_assessment'
+  ADD COLUMN IF NOT EXISTS retake_number INTEGER DEFAULT 0,
+  -- Which attempt this is. 0=first attempt, 1=first retake
+  ADD COLUMN IF NOT EXISTS max_retakes INTEGER DEFAULT 2,
+  -- Copied from config at session creation time
+  ADD COLUMN IF NOT EXISTS phase INTEGER DEFAULT 1,
+  -- 1=Situation 2=Skills 3=WorkStyle 4=Goals 5=Wildcard
+  ADD COLUMN IF NOT EXISTS current_question_number INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS adaptive_context JSONB DEFAULT '[]',
+  -- Full conversation: [{role:"user"|"assistant", content:"..."}]
+  ADD COLUMN IF NOT EXISTS extracted_proficiency JSONB DEFAULT '[]',
+  -- [{skill_name, proficiency_numeric, proficiency_label, confidence}]
+  ADD COLUMN IF NOT EXISTS is_complete BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS last_question_at TIMESTAMPTZ;
+
+-- Modify users table (add assessment tracking)
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS quick_assessment_done BOOLEAN DEFAULT false;
+  -- True after first quick_assessment session completed
+
+-- Modify profile_enrichments (add Gemini extraction columns)
+ALTER TABLE profile_enrichments
+  ADD COLUMN IF NOT EXISTS gemini_extracted JSONB,
+  -- Full Gemini extraction output. Structure documented below.
+  ADD COLUMN IF NOT EXISTS extraction_model TEXT DEFAULT 'gemini-1.5-flash',
+  ADD COLUMN IF NOT EXISTS extraction_status TEXT DEFAULT 'pending';
+  -- 'pending' | 'processing' | 'done' | 'failed'
+
+-- NEW TABLE: user_skill_profiles
+-- Single source of truth for a user's skills.
+-- Updated by both resume parsing and assessment completion.
+CREATE TABLE IF NOT EXISTS user_skill_profiles (
+  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id                UUID REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+  skills                 JSONB DEFAULT '[]',
+  -- Array of skill objects:
+  -- [{
+  --   skill_name: string,
+  --   category: string,          ("technical|soft|domain|tool|language")
+  --   proficiency_numeric: int,  (1-5)
+  --   proficiency_label: string, ("Beginner|Elementary|Intermediate|Advanced|Expert")
+  --   source: string,            ("resume"|"assessment"|"both")
+  --   confidence_score: float,   (0.0 to 1.0)
+  --   last_updated: timestamp
+  -- }]
+  profile_version        INTEGER DEFAULT 1,
+  -- Incremented on every update. Used for staleness detection.
+  resume_contributed     BOOLEAN DEFAULT false,
+  -- True if resume parsing has fed into this profile
+  assessment_contributed BOOLEAN DEFAULT false,
+  -- True if assessment has fed into this profile
+  created_at             TIMESTAMPTZ DEFAULT now(),
+  updated_at             TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_skill_profiles_user
+  ON user_skill_profiles(user_id);
+
+-- NEW TABLE: gap_analysis_reports
+-- Cached gap analysis result. Recomputed only when profile changes.
+CREATE TABLE IF NOT EXISTS gap_analysis_reports (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id              UUID REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+  profile_hash         TEXT NOT NULL,
+  -- SHA256 of sorted skills + timestamps. Changes = stale report.
+  strengths            JSONB DEFAULT '[]',
+  -- [{skill_name, proficiency_label, job_demand_pct, message}]
+  gaps                 JSONB DEFAULT '[]',
+  -- [{skill_name, category, priority_score, frequency_pct,
+  --   learnability_weeks, recommended_resources:[resource_id]}]
+  partial_matches      JSONB DEFAULT '[]',
+  -- [{skill_name, current_level, required_level, gap_size}]
+  target_roles         TEXT[],
+  total_jobs_analyzed  INTEGER DEFAULT 0,
+  roadmap              JSONB DEFAULT '[]',
+  -- [{week, focus_skill, goal, action, resource_id,
+  --   resource_name, resource_url, milestone}]
+  is_stale             BOOLEAN DEFAULT false,
+  -- Set true when profile_hash no longer matches current profile
+  gemini_raw_output    TEXT,
+  -- Stored for debugging. Never shown to user.
+  computed_at          TIMESTAMPTZ DEFAULT now(),
+  created_at           TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_gap_reports_user
+  ON gap_analysis_reports(user_id);
+CREATE INDEX IF NOT EXISTS idx_gap_reports_stale
+  ON gap_analysis_reports(user_id, is_stale);
+
+-- NEW TABLE: learning_resources
+-- Curated resource library. Gemini picks from here. Never invents.
+CREATE TABLE IF NOT EXISTS learning_resources (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name             TEXT NOT NULL,
+  -- Full name e.g. "Python for Everybody - NPTEL"
+  provider         TEXT NOT NULL,
+  -- "SWAYAM" | "NPTEL" | "PMKVY" | "Coursera" | "YouTube" | "NSDC" | "freeCodeCamp"
+  url              TEXT NOT NULL,
+  description      TEXT,
+  skill_tags       TEXT[] NOT NULL,
+  -- Skills this resource teaches e.g. ['python','data analysis']
+  category         TEXT NOT NULL,
+  -- 'technology'|'business'|'vocational'|'soft_skills'|'language'|'healthcare'
+  is_free          BOOLEAN DEFAULT true,
+  cost_inr         INTEGER DEFAULT 0,
+  duration_weeks   INTEGER,
+  difficulty_level INTEGER,
+  -- 1=absolute beginner to 5=expert
+  language         TEXT DEFAULT 'en',
+  -- 'en' | 'hi' | 'both'
+  delivery_type    TEXT,
+  -- 'video'|'certification'|'self_paced'|'workshop'|'book'
+  is_active        BOOLEAN DEFAULT true,
+  created_at       TIMESTAMPTZ DEFAULT now(),
+  updated_at       TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_resources_tags
+  ON learning_resources USING GIN(skill_tags);
+CREATE INDEX IF NOT EXISTS idx_resources_category
+  ON learning_resources(category);
+CREATE INDEX IF NOT EXISTS idx_resources_active
+  ON learning_resources(is_active);
+
+-- SEED: 10 curated Indian learning resources
+INSERT INTO learning_resources
+  (name, provider, url, description, skill_tags, category,
+   is_free, cost_inr, duration_weeks, difficulty_level, language, delivery_type)
+VALUES
+('Python Programming - NPTEL',
+ 'NPTEL', 'https://nptel.ac.in/courses/106/106/106106212/',
+ 'Foundational Python course with certification from IIT',
+ ARRAY['python','programming','data analysis'],
+ 'technology', true, 0, 12, 2, 'en', 'certification'),
+
+('Tally Prime with GST - Hindi',
+ 'YouTube', 'https://www.youtube.com/@TallyPrime',
+ 'Complete Tally Prime tutorial in Hindi covering GST filing',
+ ARRAY['tally','accounting','gst','finance'],
+ 'business', true, 0, 4, 1, 'hi', 'video'),
+
+('Digital Marketing - SWAYAM',
+ 'SWAYAM', 'https://swayam.gov.in/nd1_noc20_mg54/preview',
+ 'Govt certified digital marketing course covering SEO and social media',
+ ARRAY['digital marketing','social media','seo','content'],
+ 'business', true, 0, 8, 2, 'en', 'certification'),
+
+('EV Technology Fundamentals - PMKVY',
+ 'PMKVY', 'https://www.pmkvyofficial.org/',
+ 'Electric vehicle repair and maintenance vocational training',
+ ARRAY['electric vehicles','ev repair','automotive','mechanics'],
+ 'vocational', true, 0, 12, 2, 'hi', 'workshop'),
+
+('Data Analysis with Excel - NPTEL',
+ 'NPTEL', 'https://nptel.ac.in/courses/110/110/110110006/',
+ 'Excel for data analysis including pivot tables and charts',
+ ARRAY['excel','data analysis','spreadsheets','ms office'],
+ 'technology', true, 0, 8, 1, 'en', 'certification'),
+
+('English Communication Skills - SWAYAM',
+ 'SWAYAM', 'https://swayam.gov.in/nd1_noc20_hu01/preview',
+ 'Improve spoken and written English for professional settings',
+ ARRAY['english','communication','soft skills','presentation'],
+ 'soft_skills', true, 0, 6, 1, 'en', 'self_paced'),
+
+('Full Stack Web Development - freeCodeCamp',
+ 'freeCodeCamp', 'https://www.freecodecamp.org/learn',
+ 'Complete web development from HTML basics to React and Node',
+ ARRAY['html','css','javascript','react','nodejs','web development'],
+ 'technology', true, 0, 20, 2, 'en', 'self_paced'),
+
+('Healthcare and Nursing Assistant - PMKVY',
+ 'PMKVY', 'https://www.pmkvyofficial.org/',
+ 'Vocational training for nursing assistant and patient care',
+ ARRAY['healthcare','nursing','patient care','first aid'],
+ 'healthcare', true, 0, 16, 2, 'hi', 'workshop'),
+
+('Logistics and Supply Chain - NSDC',
+ 'NSDC', 'https://www.nsdcindia.org/',
+ 'Warehouse management, inventory and supply chain fundamentals',
+ ARRAY['logistics','supply chain','warehouse','inventory'],
+ 'vocational', true, 0, 8, 2, 'en', 'certification'),
+
+('Spoken Hindi for Professionals - SWAYAM',
+ 'SWAYAM', 'https://swayam.gov.in',
+ 'Professional Hindi communication for workplace settings',
+ ARRAY['hindi','communication','language','soft skills'],
+ 'language', true, 0, 4, 1, 'hi', 'self_paced');

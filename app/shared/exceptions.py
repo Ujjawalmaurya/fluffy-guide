@@ -104,3 +104,35 @@ class JobNotFound(AppError):
 
 class AdminUnauthorized(AppError):
     def __init__(self): super().__init__("ADMIN_UNAUTHORIZED", "Invalid admin secret.", 403)
+
+class ResumeNoText(AppError):
+    def __init__(self): super().__init__("RESUME_NO_TEXT", "Your PDF appears to be a scanned image. Please upload a text-based PDF or try a different file.", 400)
+    # log_level: WARNING
+
+class ResumeGeminiFailed(AppError):
+    def __init__(self): super().__init__("RESUME_GEMINI_FAILED", "We could not process your resume right now. Please try again in a moment.", 500)
+    # log_level: ERROR
+
+class GeminiRateLimit(AppError):
+    def __init__(self): super().__init__("GEMINI_RATE_LIMIT", "Analysis is taking a moment longer. Please wait...", 429)
+    # log_level: WARNING
+
+class GeminiParseError(AppError):
+    def __init__(self): super().__init__("GEMINI_PARSE_ERROR", "We encountered an issue processing your data. Please try again.", 422)
+    # log_level: ERROR
+
+class OpenAIRateLimit(AppError):
+    def __init__(self): super().__init__("OPENAI_RATE_LIMIT", "Your assessment is paused briefly. Resuming automatically...", 429)
+    # log_level: WARNING
+
+class OpenAIQuotaExceeded(AppError):
+    def __init__(self): super().__init__("OPENAI_QUOTA_EXCEEDED", "Assessment service is temporarily unavailable. Please try again in a few hours.", 503)
+    # log_level: ERROR (CRITICAL)
+
+class GapAnalysisNoSkills(AppError):
+    def __init__(self): super().__init__("GAP_ANALYSIS_NO_SKILLS", "Complete your assessment or upload a resume first. We need to know your skills before analyzing gaps.", 400)
+    # log_level: INFO
+
+class GapAnalysisNoJobs(AppError):
+    def __init__(self): super().__init__("GAP_ANALYSIS_NO_JOBS", "No job listings available for your region yet. We are adding more regularly. Please check back soon.", 404)
+    # log_level: INFO

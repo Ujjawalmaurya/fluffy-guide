@@ -38,6 +38,23 @@ class Settings(BaseSettings):
     log_level: str = "DEBUG"
     cors_origins: str = "http://localhost:5173"
 
+    # OpenAI
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    openai_max_retries: int = 3
+    openai_rpm_limit: int = 3
+
+    # Gemini
+    gemini_api_key: str = ""
+    gemini_max_retries: int = 3
+    gemini_rpm_limit: int = 12
+
+    # Assessment
+    assessment_max_questions: int = 11
+    assessment_min_questions: int = 9
+    assessment_max_retakes: int = 2
+    assessment_retake_cooldown_hours: int = 24
+
     # Derived — parsed from cors_origins string
     @property
     def cors_origins_list(self) -> list[str]:

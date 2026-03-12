@@ -1,49 +1,59 @@
 """
-Loguru setup — call get_logger(module_name) in each module.
-Format: TIMESTAMP | [MODULE] | LEVEL | message
-Writes to console (colored) and logs/skillbridge.log (rotated).
+Unified logging — everything goes to terminal, one format.
+Intercepts stdlib logging (uvicorn/fastapi) and routes through loguru.
 """
-import io
 import sys
+import logging
 from loguru import logger
 from app.core.config import settings
 
-# Force UTF-8 encoding for standard output on Windows
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-
-# Custom log format...
-LOG_FORMAT = (
-    "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+FORMAT = (
+    "<green>{time:HH:mm:ss}</green> | "
     "<level>[{extra[module]:<12}]</level> | "
-    "<level>{level:^7}</level> | "
+    "<level>{level:<7}</level> | "
     "<level>{message}</level>"
 )
 
-# Remove default handler
 logger.remove()
+logger.add(sys.stdout, format=FORMAT, level=settings.log_level, colorize=True, enqueue=False)
 
-# Add custom console handler with consistent format and explicit UTF-8 encoding
-logger.add(
-    sys.stdout,
-    format=LOG_FORMAT,
-    level=settings.log_level,
-    colorize=True,
-    enqueue=True,
-    backtrace=True,
-    diagnose=True,
-)
-
-# File — rotating, 7-day retention
+# File sink — rotated every 10MB, kept for 7 days
 logger.add(
     "logs/skillbridge.log",
-    format="{time:YYYY-MM-DD HH:mm:ss} | [{extra[module]:<12}] | {level:<7} | {message}", # This format is for the file, not console
-    level="DEBUG",
+    format=FORMAT,
+    level=settings.log_level,
     rotation="10 MB",
     retention="7 days",
-    enqueue=True,  # thread-safe
+    enqueue=True
 )
+
+
+class _Intercept(logging.Handler):
+    """Sends all stdlib log records into loguru."""
+    def emit(self, record: logging.LogRecord):
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        # Walk up the stack to find the real caller, not the logging internals
+        frame, depth = sys._getframe(6), 6
+        while frame and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+        module_tag = record.name.split(".")[0].upper()[:12]
+        logger.bind(module=module_tag).opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
+
+
+# Kill all existing stdlib handlers, replace with our interceptor at root level.
+# This catches uvicorn, fastapi, watchfiles, everything — including handlers
+# that uvicorn sets up after import.
+logging.basicConfig(handlers=[_Intercept()], level=0, force=True)
+for name in logging.root.manager.loggerDict:
+    logging.getLogger(name).handlers = []
+    logging.getLogger(name).propagate = True
 
 
 def get_logger(module: str):
-    """Return a logger bound to a specific module tag."""
     return logger.bind(module=module)
