@@ -9,7 +9,7 @@ from app.core.config import settings
 
 FORMAT = (
     "<green>{time:HH:mm:ss}</green> | "
-    "<level>[{extra[module]:<12}]</level> | "
+    "<level>[{name:<12}]</level> | "
     "<level>{level:<7}</level> | "
     "<level>{message}</level>"
 )

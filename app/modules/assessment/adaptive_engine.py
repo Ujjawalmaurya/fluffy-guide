@@ -1,8 +1,4 @@
-# [ASSESSMENT] Core adaptive question generation engine.
-# Uses OpenAI gpt-4o-mini to generate one question at a time.
-# Each question is generated using the FULL conversation history
-# as context — this is what makes it adaptive.
-# Gemini (not OpenAI) is used for final skill extraction only.
+# OpenAI is used for both question generation and final skill extraction.
 
 import json
 from app.modules.assessment.phase_config import (
@@ -162,14 +158,14 @@ async def generate_next_question(
   openai_provider
 ) -> dict:
   """
-  Generates the next adaptive question using OpenAI gpt-4o-mini.
+  Generates the next adaptive question using OpenAI.
   Reads the full adaptive_context from the session as conversation
   history so each question is informed by all previous answers.
 
   Args:
     session: current questionnaire_sessions DB record
     user_profile: combined user + profile data dict
-    openai_provider: OpenAIProvider instance
+    gemini_provider: GeminiProvider instance
 
   Returns:
     Parsed question dict with question, type, options, phase info
@@ -244,12 +240,11 @@ async def generate_next_question(
 async def extract_skills_from_session(
   session: dict,
   user_profile: dict,
-  gemini_provider
+  openai_provider
 ) -> dict:
   """
   Called once after assessment is fully complete.
-  Uses Gemini Flash (not OpenAI) for skill extraction — Gemini is
-  better at structured extraction from long text passages.
+  Uses OpenAI for skill extraction.
 
   Args:
     session: completed questionnaire_sessions record
@@ -276,7 +271,7 @@ async def extract_skills_from_session(
     f"QA pairs={qa_pairs.count('Q:')}"
   )
 
-  response = await gemini_provider.complete(
+  response = await openai_provider.complete(
     [{"role": "user", "content": prompt}]
   )
 

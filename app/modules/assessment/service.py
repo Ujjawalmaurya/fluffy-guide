@@ -103,8 +103,7 @@ async def check_retake_eligibility(user_id: str) -> dict:
 async def start_assessment(
     user_id: str,
     user_profile: dict,
-    openai_provider,
-    gemini_provider
+    openai_provider
 ) -> dict:
     """
     Starts a new assessment or resumes an existing incomplete one.
@@ -185,8 +184,7 @@ async def submit_answer(
     answer: str,
     user_id: str,
     user_profile: dict,
-    openai_provider,
-    gemini_provider
+    openai_provider
 ) -> dict:
     """
     Accepts user answer, appends to context, generates next question
@@ -230,7 +228,7 @@ async def submit_answer(
     
     if is_complete:
         return await _complete_assessment(
-            session_id, user_id, new_context, user_profile, gemini_provider
+            session_id, user_id, new_context, user_profile, openai_provider
         )
         
     # Generate next question
@@ -275,7 +273,7 @@ async def _complete_assessment(
     user_id: str,
     final_context: list,
     user_profile: dict,
-    gemini_provider
+    openai_provider
 ) -> dict:
     """
     Internal: finalizes assessment, extracts skills, updates profile.
@@ -287,7 +285,7 @@ async def _complete_assessment(
     extracted = await adaptive_engine.extract_skills_from_session(
         temp_session,
         {**user_profile, "user_id": user_id},
-        gemini_provider
+        openai_provider
     )
     
     skills = extracted.get("skills", [])

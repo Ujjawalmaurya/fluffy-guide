@@ -54,7 +54,7 @@ class DashboardService:
            gap_report["gaps"][:2] if gap_report and gap_report.get("gaps") else []
         )
 
-        job_matches = self.repo.get_job_matches(state, career_interests)
+        job_matches = self.repo.get_job_matches(state, career_interests, user_skills=extracted_skills)
 
         log.debug(f"Computed profile_completion={completion_pct}% for user={user_id}")
 

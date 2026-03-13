@@ -29,7 +29,7 @@ class GeminiProvider(ILLMProvider):
         self.api_key = settings.gemini_api_key
 
         # Stable Gemini model alias
-        self.model_name = "gemini-3-flash-preview"
+        self.model_name = "gemini-2.5-flash-lite"
 
         self.max_retries = settings.gemini_max_retries
         self.rpm_limit = settings.gemini_rpm_limit
@@ -74,7 +74,7 @@ class GeminiProvider(ILLMProvider):
             system_instruction=system_instruction
         )
 
-    async def complete(self, messages: list[dict], language: str = "en", **kwargs) -> str:
+    async def complete(self, messages: list[dict], language: str = "en", model_name: str | None = None, **kwargs) -> str:
         """Generate a response from Gemini."""
         await self._rate_limit_check()
 
@@ -87,24 +87,38 @@ class GeminiProvider(ILLMProvider):
             role = "model" if msg.get("role") == "assistant" else "user"
             contents.append({"role": role, "parts": [msg.get("content", "")]})
 
-        # Generate
-        model = await self._build_model(system_msg)
+        # Gemini requires at least one user message in contents to start generation
+        if not contents:
+            # If no chat messages, we must provide at least one message to trigger the system instruction
+            contents.append({"role": "user", "parts": ["Please proceed based on the system instructions."]})
+
+        # Generate - use specific model if requested, else default
+        target_model = model_name or self.model_name
+        model = await self._build_model_with_name(target_model, system_msg)
+        
         for attempt in range(1, self.max_retries + 1):
             try:
                 response = await model.generate_content_async(contents)
                 if not response or not getattr(response, "text", None):
                     raise AppError("GEMINI_EMPTY_RESPONSE", "Gemini returned an empty response")
                 return response.text
-            except google_exceptions.ResourceExhausted:
+            except (google_exceptions.ResourceExhausted, google_exceptions.ServiceUnavailable) as e:
+                is_503 = isinstance(e, google_exceptions.ServiceUnavailable)
+                log_msg = "Gemini 503 Service Unavailable" if is_503 else "Gemini 429 Rate Limit"
+                
                 if attempt < self.max_retries:
-                    await asyncio.sleep(2 ** attempt)
+                    wait_time = 2 ** attempt
+                    logger.warning(f"[AI_GEMINI] {log_msg}. Retrying in {wait_time}s (Attempt {attempt}/{self.max_retries})")
+                    await asyncio.sleep(wait_time)
                 else:
+                    if is_503:
+                        raise AppError("GEMINI_SERVICE_UNAVAILABLE", "Gemini is currently overloaded. Please try again in a few minutes.")
                     raise GeminiRateLimit()
             except Exception as e:
-                logger.error(f"[AI_GEMINI] Error: {e}")
+                logger.error(f"[AI_GEMINI] Unexpected Error: {type(e).__name__}: {e}")
                 raise
 
-    async def stream(self, messages: list[dict], language: str = "en") -> AsyncGenerator[str, None]:
+    async def stream(self, messages: list[dict], language: str = "en", model_name: str | None = None) -> AsyncGenerator[str, None]:
         """Real streaming from Gemini."""
         await self._rate_limit_check()
 
@@ -116,7 +130,12 @@ class GeminiProvider(ILLMProvider):
             role = "model" if msg.get("role") == "assistant" else "user"
             contents.append({"role": role, "parts": [msg.get("content", "")]})
 
-        model = await self._build_model(system_msg)
+        # Fallback for empty contents in stream
+        if not contents:
+            contents.append({"role": "user", "parts": ["Please proceed."]})
+
+        target_model = model_name or self.model_name
+        model = await self._build_model_with_name(target_model, system_msg)
         try:
             async for chunk in await model.generate_content_async(contents, stream=True):
                 if chunk.text:
@@ -124,6 +143,13 @@ class GeminiProvider(ILLMProvider):
         except Exception as e:
             logger.error(f"[AI_GEMINI] Streaming error: {e}")
             raise
+
+    async def _build_model_with_name(self, model_name: str, system_instruction: str | None = None):
+        """Internal helper to build model with specific name and instruction."""
+        return genai.GenerativeModel(
+            model_name=model_name,
+            system_instruction=system_instruction
+        )
 
     async def is_available(self) -> bool:
         """Check if Gemini API is available."""

@@ -49,11 +49,19 @@ class Settings(BaseSettings):
     gemini_max_retries: int = 3
     gemini_rpm_limit: int = 12
 
+    # Groq
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+
     # Assessment
     assessment_max_questions: int = 11
     assessment_min_questions: int = 9
     assessment_max_retakes: int = 2
     assessment_retake_cooldown_hours: int = 24
+
+    # Resume Analysis
+    resume_analysis_max_file_size_mb: int = 5
+    resume_bullet_daily_limit: int = 10
 
     # Derived — parsed from cors_origins string
     @property

@@ -21,6 +21,9 @@ from app.modules.assessment.router import router as assessment_router
 from app.modules.gap_analysis.router import router as gap_router
 from app.modules.learning_resources.router import router as resources_router
 
+# New Resume Analysis Router (Literal path as per instructions)
+from routers.resume_analysis import router as resume_router
+
 log = get_logger("MAIN")
 
 app = FastAPI(
@@ -52,6 +55,7 @@ app.include_router(skill_router)
 app.include_router(assessment_router)
 app.include_router(gap_router)
 app.include_router(resources_router)
+app.include_router(resume_router, prefix="/api/v1")
 
 
 @app.on_event("startup")
