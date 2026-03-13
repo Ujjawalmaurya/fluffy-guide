@@ -4,6 +4,7 @@
 import time
 import asyncio
 import google.generativeai as genai
+from typing import AsyncGenerator
 from google.api_core import exceptions as google_exceptions
 
 from loguru import logger
@@ -64,87 +65,65 @@ class GeminiProvider(ILLMProvider):
 
         self.call_timestamps.append(time.time())
 
+
+    async def _build_model(self, system_instruction: str | None = None):
+        """Builds or re-builds the model instance if system instruction changes."""
+        # Note: In production, we might want to cache models per instruction if they repeat
+        return genai.GenerativeModel(
+            model_name=self.model_name,
+            system_instruction=system_instruction
+        )
+
     async def complete(self, messages: list[dict], language: str = "en", **kwargs) -> str:
         """Generate a response from Gemini."""
-
         await self._rate_limit_check()
 
-        # Convert OpenAI-style messages to Gemini format
-        if isinstance(messages, str):
-            contents = messages
-        else:
-            contents = []
+        system_msg = next((m["content"] for m in messages if m["role"] == "system"), None)
+        chat_msgs = [m for m in messages if m["role"] != "system"]
 
-            for msg in messages:
-                role = "model" if msg.get("role") == "assistant" else "user"
+        # Convert to Gemini format
+        contents = []
+        for msg in chat_msgs:
+            role = "model" if msg.get("role") == "assistant" else "user"
+            contents.append({"role": role, "parts": [msg.get("content", "")]})
 
-                contents.append({
-                    "role": role,
-                    "parts": [msg.get("content", "")]
-                })
-
+        # Generate
+        model = await self._build_model(system_msg)
         for attempt in range(1, self.max_retries + 1):
-
             try:
-
-                response = await self.model.generate_content_async(contents)
-
-                # Validate response
+                response = await model.generate_content_async(contents)
                 if not response or not getattr(response, "text", None):
-
-                    logger.error("[AI_GEMINI] Empty response from Gemini")
-
-                    raise AppError(
-                        "GEMINI_EMPTY_RESPONSE",
-                        "Gemini returned an empty response"
-                    )
-
+                    raise AppError("GEMINI_EMPTY_RESPONSE", "Gemini returned an empty response")
                 return response.text
-
-            # Gemini rate limit handling
             except google_exceptions.ResourceExhausted:
-
                 if attempt < self.max_retries:
-
-                    wait = 2 ** attempt
-
-                    logger.warning(
-                        f"[AI_GEMINI] Rate limited (attempt {attempt}/{self.max_retries}). Waiting {wait}s"
-                    )
-
-                    await asyncio.sleep(wait)
-
+                    await asyncio.sleep(2 ** attempt)
                 else:
-
-                    logger.error("[AI_GEMINI] Rate limit retries exhausted")
-
                     raise GeminiRateLimit()
-
-            # Model not found
-            except google_exceptions.NotFound:
-
-                logger.error(
-                    f"[AI_GEMINI] Model not found: {self.model_name}"
-                )
-
-                raise AppError(
-                    "GEMINI_MODEL_NOT_FOUND",
-                    f"Gemini model '{self.model_name}' is not available."
-                )
-
-            # Unexpected errors
             except Exception as e:
-
-                logger.error(
-                    f"[AI_GEMINI] Unexpected error: {str(e)[:200]}"
-                )
-
+                logger.error(f"[AI_GEMINI] Error: {e}")
                 raise
 
-    async def stream(self, messages: list[dict], language: str = "en"):
-        """Streaming wrapper (simple implementation)."""
-        result = await self.complete(messages, language)
-        yield result
+    async def stream(self, messages: list[dict], language: str = "en") -> AsyncGenerator[str, None]:
+        """Real streaming from Gemini."""
+        await self._rate_limit_check()
+
+        system_msg = next((m["content"] for m in messages if m["role"] == "system"), None)
+        chat_msgs = [m for m in messages if m["role"] != "system"]
+
+        contents = []
+        for msg in chat_msgs:
+            role = "model" if msg.get("role") == "assistant" else "user"
+            contents.append({"role": role, "parts": [msg.get("content", "")]})
+
+        model = await self._build_model(system_msg)
+        try:
+            async for chunk in await model.generate_content_async(contents, stream=True):
+                if chunk.text:
+                    yield chunk.text
+        except Exception as e:
+            logger.error(f"[AI_GEMINI] Streaming error: {e}")
+            raise
 
     async def is_available(self) -> bool:
         """Check if Gemini API is available."""
