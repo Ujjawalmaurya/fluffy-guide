@@ -1,58 +1,52 @@
-"""
-Unified logging — everything goes to terminal, one format.
-Intercepts stdlib logging (uvicorn/fastapi) and routes through loguru.
-"""
-import sys
 import logging
-from loguru import logger
-from app.core.config import settings
+import sys
+from datetime import datetime
 
-FORMAT = (
-    "<green>{time:HH:mm:ss}</green> | "
-    "<level>[{name:<12}]</level> | "
-    "<level>{level:<7}</level> | "
-    "<level>{message}</level>"
-)
+# Simple logger that doesn't need loguru.
+# Real world: just print it, or use standard logging if you're fancy.
+# I'll keep it simple: print with a nice format.
 
-logger.remove()
-logger.add(sys.stdout, format=FORMAT, level=settings.log_level, colorize=True, enqueue=False)
+class SimpleLogger:
+    def __init__(self, module="APP"):
+        self.module = module
 
-# File sink — rotated every 10MB, kept for 7 days
-logger.add(
-    "logs/skillbridge.log",
-    format=FORMAT,
-    level=settings.log_level,
-    rotation="10 MB",
-    retention="7 days",
-    enqueue=True
-)
+    def info(self, msg, *args, **kwargs):
+        self._log("INFO", msg)
+
+    def error(self, msg, *args, **kwargs):
+        self._log("ERROR", msg)
+
+    def warning(self, msg, *args, **kwargs):
+        self._log("WARN", msg)
+
+    def debug(self, msg, *args, **kwargs):
+        self._log("DEBUG", msg)
+
+    def bind(self, **kwargs):
+        # Loguru-style bind, just returns a new logger for now
+        module = kwargs.get("module", self.module)
+        return SimpleLogger(module=module)
+
+    def opt(self, **kwargs):
+        # Loguru-style opt, just returns self
+        return self
+
+    def _log(self, level, msg):
+        time = datetime.now().strftime("%H:%M:%S")
+        print(f"{time} | {level:<7} | [{self.module:<12}] | {msg}")
 
 
-class _Intercept(logging.Handler):
-    """Sends all stdlib log records into loguru."""
+# Standard instance
+logger = SimpleLogger()
+
+# Intercept standard logging to keep things unified
+class InterceptHandler(logging.Handler):
     def emit(self, record: logging.LogRecord):
-        try:
-            level = logger.level(record.levelname).name
-        except ValueError:
-            level = record.levelno
-        # Walk up the stack to find the real caller, not the logging internals
-        frame, depth = sys._getframe(6), 6
-        while frame and frame.f_code.co_filename == logging.__file__:
-            frame = frame.f_back
-            depth += 1
-        module_tag = record.name.split(".")[0].upper()[:12]
-        logger.bind(module=module_tag).opt(depth=depth, exception=record.exc_info).log(
-            level, record.getMessage()
-        )
+        level = record.levelname
+        msg = record.getMessage()
+        logger.bind(module=record.name)._log(level, msg)
 
-
-# Kill all existing stdlib handlers, replace with our interceptor at root level.
-# This catches uvicorn, fastapi, watchfiles, everything — including handlers
-# that uvicorn sets up after import.
-logging.basicConfig(handlers=[_Intercept()], level=0, force=True)
-for name in logging.root.manager.loggerDict:
-    logging.getLogger(name).handlers = []
-    logging.getLogger(name).propagate = True
+logging.basicConfig(handlers=[InterceptHandler()], level=logging.INFO, force=True)
 
 
 def get_logger(module: str):

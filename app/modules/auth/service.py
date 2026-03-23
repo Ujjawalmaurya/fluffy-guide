@@ -8,6 +8,7 @@ from app.core.security import generate_otp, create_access_token, create_refresh_
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.modules.auth.repository import AuthRepository
+from app.services.email_service import EmailService
 from app.shared.exceptions import OTPNotFound, OTPExpired, OTPAlreadyUsed, OTPInvalid
 
 log = get_logger("AUTH")
@@ -16,15 +17,20 @@ log = get_logger("AUTH")
 class AuthService:
     def __init__(self, repo: AuthRepository):
         self.repo = repo
+        self.email_service = EmailService()
 
     def request_otp(self, email: str) -> str:
-        """Generate OTP, store it, print to terminal. Returns the OTP (for logging only)."""
+        """Generate OTP, store it, send via email. Returns the OTP (for logging only)."""
         otp = generate_otp()
         expires_at = (datetime.now(timezone.utc) + timedelta(minutes=settings.otp_expire_minutes)).isoformat()
         self.repo.create_otp(email, otp, expires_at)
-        # Print directly — loguru can buffer but print won't
-        print(f"\n{'='*40}\n OTP for {email} → {otp}\n{'='*40}\n", flush=True)
-        log.info(f"OTP for {email} → {otp}")
+        
+        # In development, still nice to see it in terminal
+        if settings.app_env == "development":
+            print(f"\n{'='*40}\n OTP for {email} → {otp}\n{'='*40}\n", flush=True)
+
+        self.email_service.send_otp(email, otp)
+        log.info(f"OTP requested for {email}")
         return otp
 
     def verify_otp(self, email: str, otp_code: str) -> dict:

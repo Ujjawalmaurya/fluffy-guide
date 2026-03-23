@@ -44,3 +44,44 @@ class CompletionScoreOut(BaseModel):
     score: int
     filled_fields: list[str]
     missing_fields: list[str]
+
+
+class ATSBreakdown(BaseModel):
+    formatting: int
+    keywords: int
+    impact: int
+
+
+class ATSScoreOut(BaseModel):
+    score: int
+    breakdown: ATSBreakdown
+
+
+class IndiaQualifications(BaseModel):
+    exams: list[str]
+    certificates: list[str]
+
+
+class Achievement(BaseModel):
+    title: str
+    impact: str
+
+
+class ResumeAnalysisOut(BaseModel):
+    parser_result: dict
+    india_qualifications: IndiaQualifications
+    achievements: list[Achievement]
+    ats_score: ATSScoreOut
+    suggestions: list[str]
+
+
+class BulletRewriteIn(BaseModel):
+    bullets: list[str]
+
+
+class BulletRewriteIn(BaseModel):
+    bullets: list[str]
+
+class BulletRewriteOut(BaseModel):
+    rewritten_bullets: list[str]
+    remaining_daily_rewrites: int

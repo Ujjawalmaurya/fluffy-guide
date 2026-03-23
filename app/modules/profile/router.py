@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, UploadFile, File
 
 from app.modules.profile.service import ProfileService
 from app.modules.profile.repository import ProfileRepository
-from app.modules.profile.schemas import ProfileUpdateIn
+from app.modules.profile.schemas import ProfileUpdateIn, BulletRewriteIn, BulletRewriteOut
 from app.shared.dependencies import get_db, get_current_user
 from app.shared.response_models import ok
 
@@ -51,3 +51,12 @@ async def get_completion(
     service: ProfileService = Depends(_get_service),
 ):
     return ok(data=service.get_completion_score(current_user["id"]))
+
+
+@router.post("/rewrite-bullets", response_model=BulletRewriteOut)
+async def rewrite_bullets(
+    body: BulletRewriteIn,
+    current_user: dict = Depends(get_current_user),
+    service: ProfileService = Depends(_get_service),
+):
+    return await service.rewrite_bullets(current_user["id"], body.bullets)

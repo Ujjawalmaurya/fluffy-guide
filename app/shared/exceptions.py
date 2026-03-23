@@ -129,6 +129,12 @@ class OpenAIQuotaExceeded(AppError):
     def __init__(self): super().__init__("OPENAI_QUOTA_EXCEEDED", "Assessment service is temporarily unavailable. Please try again in a few hours.", 503)
     # log_level: ERROR (CRITICAL)
 
+class GroqRateLimit(AppError):
+    def __init__(self): super().__init__("GROQ_RATE_LIMIT", "We are processing too many requests. Please wait a moment.", 429)
+
+class GroqFailed(AppError):
+    def __init__(self): super().__init__("GROQ_FAILED", "The AI rewriter is temporarily unavailable.", 503)
+
 class GapAnalysisNoSkills(AppError):
     def __init__(self): super().__init__("GAP_ANALYSIS_NO_SKILLS", "Complete your assessment or upload a resume first. We need to know your skills before analyzing gaps.", 400)
     # log_level: INFO
@@ -136,3 +142,6 @@ class GapAnalysisNoSkills(AppError):
 class GapAnalysisNoJobs(AppError):
     def __init__(self): super().__init__("GAP_ANALYSIS_NO_JOBS", "No job listings available for your region yet. We are adding more regularly. Please check back soon.", 404)
     # log_level: INFO
+
+class RateLimitExceeded(AppError):
+    def __init__(self, msg="Daily limit reached."): super().__init__("RATE_LIMIT_EXCEEDED", msg, 429)

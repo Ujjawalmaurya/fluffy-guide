@@ -6,12 +6,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 
+from app.core.ai_models import AIModel
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Supabase
     supabase_url: str
     supabase_service_key: str
+
+    # Resend
+    resend_api_key: str = ""
 
     # JWT
     jwt_secret_key: str
@@ -53,21 +59,21 @@ class Settings(BaseSettings):
     def sarvam_model(self) -> str: return "sarvam-m"
 
     @property
-    def openai_model(self) -> str: return "gpt-4o-mini"
+    def openai_model(self) -> str: return AIModel.GPT_4O_MINI
     @property
     def openai_max_retries(self) -> int: return 3
     @property
     def openai_rpm_limit(self) -> int: return 3
 
     @property
-    def gemini_model(self) -> str: return "gemini-1.5-flash"
+    def gemini_model(self) -> str: return AIModel.GEMINI_1_5_FLASH
     @property
     def gemini_max_retries(self) -> int: return 3
     @property
     def gemini_rpm_limit(self) -> int: return 12
 
     @property
-    def groq_model(self) -> str: return "llama-3.3-70b-versatile"
+    def groq_model(self) -> str: return AIModel.LLAMA_3_3_70B
 
     @property
     def assessment_max_questions(self) -> int: return 11

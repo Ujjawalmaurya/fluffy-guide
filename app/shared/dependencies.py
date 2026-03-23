@@ -56,6 +56,20 @@ async def get_current_user(
     return result.data
 
 
+async def get_officer_user(current_user: dict = Depends(get_current_user)) -> dict:
+    """
+    Restricts access to users with 'government_officer' or 'admin' user_type.
+    """
+    user_type = current_user.get("user_type", "individual_youth")
+    if user_type not in ["government_officer", "admin"]:
+        log.warning(f"Unauthorized government access attempt by user {current_user.get('id')}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"success": False, "error_code": "OFFICER_UNAUTHORIZED", "message": "Officer-only access required.", "details": {}}
+        )
+    return current_user
+
+
 async def get_admin(x_admin_secret: str = Header(None)) -> bool:
     """
     Admin-only routes — check X-Admin-Secret header.

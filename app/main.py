@@ -20,9 +20,16 @@ from app.modules.skill_profile.router import router as skill_router
 from app.modules.assessment.router import router as assessment_router
 from app.modules.gap_analysis.router import router as gap_router
 from app.modules.learning_resources.router import router as resources_router
+from app.modules.recommendations.router import router as recommendations_router
+from app.modules.analytics.router import router as analytics_router
+from app.modules.translate.router import router as translate_router
+from app.modules.skill_profile.related_skills import router as related_skills_router
+from app.modules.interview.router import router as interview_router
+from app.modules.demo.router import router as demo_router
 
 # New Resume Analysis Router (Literal path as per instructions)
 from routers.resume_analysis import router as resume_router
+from routers.government import router as government_router
 
 log = get_logger("MAIN")
 
@@ -55,7 +62,14 @@ app.include_router(skill_router)
 app.include_router(assessment_router)
 app.include_router(gap_router)
 app.include_router(resources_router)
+app.include_router(recommendations_router)
+app.include_router(analytics_router, prefix="/api/v1")
+app.include_router(translate_router, prefix="/api/v1")
+app.include_router(related_skills_router)
+app.include_router(interview_router)
+app.include_router(demo_router)
 app.include_router(resume_router, prefix="/api/v1")
+app.include_router(government_router, prefix="/api/v1")
 
 
 @app.on_event("startup")

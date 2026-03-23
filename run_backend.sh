@@ -19,4 +19,8 @@ else
     exit 1
 fi
 
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 \
+  --reload-exclude "venv/*" \
+  --reload-exclude "logs/*" \
+  --reload-exclude "*.log" \
+  --reload-exclude "__pycache__/*"

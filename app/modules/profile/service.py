@@ -2,10 +2,11 @@
 Profile service — CRUD, resume parsing, profile completion scoring.
 """
 from app.modules.profile.repository import ProfileRepository
-from app.modules.profile.resume_parser import parse_resume
-from app.modules.profile.schemas import ProfileUpdateIn
-from app.shared.exceptions import ResumeInvalid, ResumeTooLarge
+from app.modules.profile import resume_parser
+from app.modules.profile.schemas import ProfileUpdateIn, BulletRewriteOut
+from app.shared.exceptions import ResumeInvalid, ResumeTooLarge, RateLimitExceeded
 from app.core.logger import get_logger
+import asyncio
 
 log = get_logger("PROFILE")
 
@@ -43,16 +44,38 @@ class ProfileService:
             raise ResumeTooLarge()
 
         from app.modules.ai_chat.providers.gemini import get_gemini_instance
-        result = await parse_resume(file_bytes, filename, content_type, user_id, get_gemini_instance())
+        from app.modules.ai_chat.providers.groq_provider import GroqProvider
+
+        gemini = get_gemini_instance()
+        groq = GroqProvider() # Assumes env vars are set
+
+        # 1. Basic Parsing (Flash)
+        result = await resume_parser.parse_resume(file_bytes, filename, content_type, user_id, gemini)
+        raw_text = result["raw_text"]
+
+        # 2. Parallel Deep Analysis
+        ats_task = resume_parser.score_ats(raw_text, gemini)
+        india_task = resume_parser.extract_india_details(raw_text, gemini)
+        achievements_task = resume_parser.detect_achievements(raw_text, groq)
+
+        ats_res, india_res, achievements_res = await asyncio.gather(ats_task, india_task, achievements_task)
+
+        # 3. Store Enrichment
+        full_parsed = {
+            **result["parsed"],
+            "ats_score": ats_res,
+            "india_qualifications": india_res,
+            "achievements": achievements_res.get("achievements", [])
+        }
 
         self.repo.upsert_enrichment(
             user_id=user_id,
             original_name=filename,
-            raw_text=result["raw_text"],
-            parsed=result["parsed"],
+            raw_text=raw_text,
+            parsed=full_parsed,
         )
 
-        # Merge parsed skills into user_skill_profiles — this feeds gap analysis
+        # Merge parsed skills into user_skill_profiles
         parsed_skills = result["parsed"].get("skills", [])
         if parsed_skills:
             from app.modules.skill_profile import aggregator as skill_aggregator
@@ -60,22 +83,35 @@ class ProfileService:
             from app.core.database import get_supabase
             skill_repo = SkillProfileRepository(get_supabase())
             await skill_aggregator.merge_from_resume(user_id, parsed_skills, skill_repo)
-            log.info(f"Skills merged into user_skill_profiles for user={user_id}. count={len(parsed_skills)}")
-        else:
-            log.warning(f"Resume parsed but no skills found for user={user_id}")
-
-        log.info(f"Resume parsed for user={user_id}. Found {len(parsed_skills)} skills")
+            log.info(f"Skills merged for user={user_id}")
 
         return {
-            "skills_found": parsed_skills,
-            "education_hints": result["parsed"].get("education", []),
-            "experience_hints": result["parsed"].get("experience", []),
-            "experience_level": result["parsed"].get("experience_level"),
-            "strengths": result["parsed"].get("strengths", []),
-            "weaknesses": result["parsed"].get("weaknesses", []),
-            "career_suggestions": result["parsed"].get("career_suggestions", []),
-            "skill_gap_analysis": result["parsed"].get("skill_gap_analysis"),
+            "parser_result": result["parsed"],
+            "india_qualifications": india_res,
+            "achievements": achievements_res.get("achievements", []),
+            "ats_score": ats_res,
+            "suggestions": ats_res.get("suggestions", [])
         }
+
+    async def rewrite_bullets(self, user_id: str, bullets: list[str]) -> BulletRewriteOut:
+        # Rate limit: 5 per day
+        limit = 5
+        count = self.repo.get_daily_rewrite_count(user_id)
+        if count >= limit:
+            raise RateLimitExceeded(msg=f"Daily limit of {limit} reached.")
+
+        from app.modules.ai_chat.providers.groq_provider import GroqProvider
+        groq = GroqProvider()
+        
+        result = await resume_parser.rewrite_bullets(bullets, groq)
+        rewritten = result.get("rewritten_bullets", bullets)
+
+        self.repo.increment_rewrite_count(user_id)
+        
+        return BulletRewriteOut(
+            rewritten_bullets=rewritten,
+            remaining_daily_rewrites=max(0, limit - (count + 1))
+        )
 
     def get_completion_score(self, user_id: str) -> dict:
         profile = self.repo.get_profile(user_id) or {}
