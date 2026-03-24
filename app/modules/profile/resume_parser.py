@@ -16,14 +16,14 @@ RESUME_EXTRACTION_PROMPT = """Extract deep career insights from the resume below
 Return ONLY valid JSON. No markdown.
 
 Fields:
-- skills: list of {name, category, proficiency_label, years_used}
+- skills: list of {{name, category, proficiency_label, years_used}}
 - experience_level: Entry|Junior|Mid|Senior|Expert
 - strengths: list of strings
 - weaknesses: list of strings (areas for improvement)
 - career_suggestions: list of strings (suitable roles in India)
 - skill_gap_analysis: sentence on what's missing for target roles
-- education: list of {degree, institution, year}
-- experience: list of {title, company, duration}
+- education: list of {{degree, institution, year}}
+- experience: list of {{title, company, duration}}
 
 Resume:
 {resume_text}"""
@@ -33,7 +33,7 @@ Return ONLY valid JSON. No markdown.
 
 Fields:
 - score: int (0-100)
-- breakdown: {formatting: 0-33, keywords: 0-33, impact: 0-34}
+- breakdown: {{formatting: 0-33, keywords: 0-33, impact: 0-34}}
 - suggestions: list of strings
 
 Resume:
@@ -53,7 +53,7 @@ ACHIEVEMENT_DETECTION_PROMPT = """Detect quantified achievements (numbers, perce
 Return ONLY valid JSON. No markdown.
 
 Fields:
-- achievements: list of {title: "Short description", impact: "Quantified metric"}
+- achievements: list of {{title: "Short description", impact: "Quantified metric"}}
 
 Resume:
 {resume_text}"""
@@ -65,7 +65,7 @@ Input Bullets:
 {bullets}
 
 Return as:
-{rewritten_bullets: ["new bullet 1", "new bullet 2", ...]}"""
+{{rewritten_bullets: ["new bullet 1", "new bullet 2", ...]}}"""
 
 async def parse_resume(file_bytes: bytes, filename: str, content_type: str, user_id: str,
                        gemini_provider: GeminiProvider) -> dict:

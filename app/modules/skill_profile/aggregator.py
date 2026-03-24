@@ -3,6 +3,25 @@ from loguru import logger
 from datetime import datetime, timezone
 from app.modules.skill_profile.repository import SkillProfileRepository
 
+# Gemini returns proficiency_label (string). Map it to a numeric 1-5 scale.
+_LABEL_TO_NUMERIC: dict[str, int] = {
+    "beginner":     1,
+    "basic":        1,
+    "novice":       1,
+    "elementary":   1,
+    "intermediate": 2,
+    "moderate":     2,
+    "skilled":      3,
+    "advanced":     4,
+    "proficient":   4,
+    "expert":       5,
+    "master":       5,
+}
+
+def _label_to_numeric(label: str, fallback: int = 1) -> int:
+    """Convert a proficiency label string to a numeric 1-5 value."""
+    return _LABEL_TO_NUMERIC.get(str(label).strip().lower(), fallback)
+
 async def merge_from_resume(user_id: str | UUID, resume_skills: list[dict], repo: SkillProfileRepository):
     """
     Merges Gemini-extracted resume skills into user_skill_profiles.
@@ -24,8 +43,8 @@ async def merge_from_resume(user_id: str | UUID, resume_skills: list[dict], repo
         if not skill_key:
             continue
             
-        inc_prof = int(inc_skill.get("proficiency_numeric", 1))
-        inc_conf = float(inc_skill.get("confidence", inc_skill.get("confidence_score", 0.0)))
+        inc_prof = int(inc_skill.get("proficiency_numeric") or _label_to_numeric(inc_skill.get("proficiency_label", ""), fallback=1))
+        inc_conf = float(inc_skill.get("confidence", inc_skill.get("confidence_score", 0.0)) or 0.0)
         
         if skill_key not in existing_skills:
             # Add new skill

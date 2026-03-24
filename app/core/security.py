@@ -19,15 +19,19 @@ def generate_otp() -> str:
     return "".join(random.choices(string.digits, k=settings.otp_length))
 
 
-def create_access_token(user_id: str) -> str:
+def create_access_token(user_id: str, data: dict | None = None) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_access_expire_minutes)
     payload = {"sub": user_id, "type": "access", "exp": expire}
+    if data:
+        payload.update(data)
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-def create_refresh_token(user_id: str) -> str:
+def create_refresh_token(user_id: str, data: dict | None = None) -> str:
     expire = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_expire_days)
     payload = {"sub": user_id, "type": "refresh", "exp": expire}
+    if data:
+        payload.update(data)
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 

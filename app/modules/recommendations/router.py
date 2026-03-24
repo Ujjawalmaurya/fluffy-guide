@@ -34,7 +34,7 @@ async def get_job_recommendations(
             limit=limit,
             match_threshold=threshold
         )
-        return {"recommendations": recommendations}
+        return {"success": True, "data": recommendations}
     except Exception as e:
         log.error(f"Failed to get recommendations for {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error while fetching recommendations")

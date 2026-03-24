@@ -67,7 +67,7 @@ app.include_router(analytics_router, prefix="/api/v1")
 app.include_router(translate_router, prefix="/api/v1")
 app.include_router(related_skills_router)
 app.include_router(interview_router)
-app.include_router(demo_router)
+app.include_router(demo_router, prefix="/api/v1")
 app.include_router(resume_router, prefix="/api/v1")
 app.include_router(government_router, prefix="/api/v1")
 

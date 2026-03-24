@@ -30,10 +30,10 @@ class DashboardService:
         skills_result = db.table("user_skill_profiles").select(
            "skills"
         ).eq("user_id", user_id).limit(1).execute()
+        skills_data = skills_result.data[0].get("skills", []) if skills_result.data else []
         extracted_skills = [
-           s["skill_name"]
-           for s in (skills_result.data[0]["skills"]
-                     if skills_result.data and skills_result.data[0].get("skills") else [])
+           s.get("skill_name") or s.get("name")
+           for s in skills_data if isinstance(s, dict) and (s.get("skill_name") or s.get("name"))
         ]
 
         # Check if assessment is done

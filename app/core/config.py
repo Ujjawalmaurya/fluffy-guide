@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     # Supabase
     supabase_url: str
     supabase_service_key: str
+    supabase_anon_key: str
 
     # Resend
     resend_api_key: str = ""
@@ -27,6 +28,7 @@ class Settings(BaseSettings):
 
     # Admin
     admin_secret: str
+    demo_password: str = "12345678"
 
     # App
     app_env: str = "development"

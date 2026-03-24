@@ -5,7 +5,7 @@ from models.resume_analysis_models import StructuredProfile, QualityScores
 def calculate_quality_scores(
     profile: StructuredProfile,
     raw_text: str,
-    target_role: Optional[str] = None
+    target_roles: Optional[list[str]] = None
 ) -> QualityScores:
     """
     Calculates various quality scores for a resume based on the extracted profile and raw text.
@@ -92,17 +92,23 @@ def calculate_quality_scores(
 
     # 5. Keyword Relevance (0-100, Optional)
     keyword_relevance = None
-    if target_role:
-        keywords = set(target_role.lower().split())
-        # Filter small words
-        keywords = {kw for kw in keywords if len(kw) > 3}
-        matches = 0
-        for kw in keywords:
-            if kw in raw_text.lower():
-                matches += 1
+    if target_roles:
+        role_scores = []
+        for role in target_roles:
+            keywords = set(role.lower().split())
+            # Filter small words
+            keywords = {kw for kw in keywords if len(kw) > 3}
+            if not keywords: continue
+            
+            matches = 0
+            for kw in keywords:
+                if kw in raw_text.lower():
+                    matches += 1
+            
+            role_scores.append(int((matches / len(keywords)) * 100))
         
-        if keywords:
-            keyword_relevance = int((matches / len(keywords)) * 100)
+        if role_scores:
+            keyword_relevance = max(role_scores)
             keyword_relevance = min(100, keyword_relevance)
 
     # 6. Overall Score (Weighted Average)

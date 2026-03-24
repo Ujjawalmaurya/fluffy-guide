@@ -27,7 +27,8 @@ Follow these strict rules:
    - Excessive length of the references section.
    - Father's name or other overly personal details common in some Indian CVs.
 7. Detect vocational qualifications and certificates: ITI, Polytechnic, Diploma, NSDC, PMKVY, etc.
-8. If a field is missing, use null or an empty list/dict as appropriate.
+8. Infer potential target roles: Based on the candidate's skills and experience, list 3-5 specific job titles they are well-qualified for (e.g., "Full Stack Developer", "Cloud Architect").
+9. If a field is missing, use null or an empty list/dict as appropriate.
 
 Output must be ONLY the JSON object. No markdown, no preamble.
 """
@@ -36,6 +37,10 @@ def normalize_ai_output(data: dict) -> dict:
     """
     Cleans up common AI output variations to ensure Pydantic validation passes.
     """
+    # 0. Handle "inferred_target_roles"
+    if not isinstance(data.get("inferred_target_roles"), list):
+        data["inferred_target_roles"] = []
+    
     # 1. Handle "skills" - must be list of Skill objects
     if isinstance(data.get("skills"), list):
         normalized_skills = []

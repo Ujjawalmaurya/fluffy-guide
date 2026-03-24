@@ -63,7 +63,7 @@ async def increment_rate_limit(user_id: str, db):
 @router.post("/analyze", response_model=ResumeAnalysisResult)
 async def analyze_resume(
     file: UploadFile = File(...),
-    target_role: Optional[str] = Form(None),
+    target_roles: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -79,12 +79,17 @@ async def analyze_resume(
     if len(content) > settings.resume_analysis_max_file_size_mb * 1024 * 1024:
         raise HTTPException(status_code=413, detail=f"File too large. Max {settings.resume_analysis_max_file_size_mb}MB allowed.")
 
+    # Parse target_roles from comma-separated string if present
+    roles_list = []
+    if target_roles:
+        roles_list = [r.strip() for r in target_roles.split(",") if r.strip()]
+
     # Call the orchestrator which handles extraction, AI analysis, scoring, and suggestions
     try:
         result = await analyze_resume_pipeline(
             user_id=current_user["id"],
             file_content=content,
-            target_role=target_role
+            target_roles=roles_list
         )
         
         duration_ms = int((time.time() - start_time) * 1000)
@@ -137,7 +142,7 @@ async def improve_single_bullet(
             detail=f"Daily limit of {settings.resume_bullet_daily_limit} improvements reached. Try again tomorrow."
         )
         
-    improvement = await improve_bullet_via_groq(request.bullet, request.target_role)
+    improvement = await improve_bullet_via_groq(request.bullet, request.target_roles)
     
     # Increment counter
     await increment_rate_limit(current_user["id"], db)

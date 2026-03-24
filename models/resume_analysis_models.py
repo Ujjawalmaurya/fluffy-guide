@@ -48,6 +48,7 @@ class StructuredProfile(BaseModel):
     has_linkedin: bool = False
     has_github: bool = False
     has_summary_section: bool = False
+    inferred_target_roles: List[str] = Field(default_factory=list)
 
 class QualityScores(BaseModel):
     ats_compatibility: int = 0
@@ -66,7 +67,7 @@ class BulletImprovement(BaseModel):
 
 class ImproveBulletRequest(BaseModel):
     bullet: str
-    target_role: Optional[str] = None
+    target_roles: List[str] = Field(default_factory=list)
 
 class SuggestionSet(BaseModel):
     summary_generated: str = ""
@@ -83,6 +84,6 @@ class ResumeAnalysisResult(BaseModel):
     quality_scores: QualityScores = Field(default_factory=QualityScores)
     suggestions: SuggestionSet = Field(default_factory=SuggestionSet)
     overall_score: int = 0
-    target_role: Optional[str] = None
+    target_roles: List[str] = Field(default_factory=list)
     india_flags: List[str] = Field(default_factory=list)
     raw_text: Optional[str] = None

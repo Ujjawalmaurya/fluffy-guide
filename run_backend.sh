@@ -20,6 +20,7 @@ else
 fi
 
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 \
+  --env-file .env \
   --reload-exclude "venv/*" \
   --reload-exclude "logs/*" \
   --reload-exclude "*.log" \

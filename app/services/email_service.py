@@ -14,7 +14,7 @@ class EmailService:
         """
         Sends an OTP email using Resend.
         """
-        subject = f"{otp} is your SkillBridge verification code"
+        subject = f"{otp} is your SkillBridge login verification code"
         html = f"""
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
             <h2 style="color: #333;">Verification Code</h2>
@@ -33,7 +33,7 @@ class EmailService:
 
         try:
             params = {
-                "from": "SkillBridge <onboarding@resend.dev>", # Default sender for trialing
+                "from": "SkillBridge-AI<onboarding@resend.dev>", # Default sender for trialing
                 "to": [email],
                 "subject": subject,
                 "html": html,

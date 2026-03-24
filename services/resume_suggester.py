@@ -71,7 +71,7 @@ async def improve_bullet_via_groq(bullet: str, role: Optional[str] = None) -> Bu
         logger.error(f"[RESUME_ANALYSIS] Groq bullet improvement failed: {str(e)}")
         return BulletImprovement(original=bullet, improved=bullet, reason=f"Improvement failed: {str(e)}")
 
-async def generate_summary_via_gemini(profile: StructuredProfile, target_role: Optional[str] = None) -> str:
+async def generate_summary_via_gemini(profile: StructuredProfile, target_roles: Optional[List[str]] = None) -> str:
     """
     Uses Gemini to generate a professional summary.
     """
@@ -88,7 +88,7 @@ async def generate_summary_via_gemini(profile: StructuredProfile, target_role: O
     prompt = (
         f"Generate a 3-line professional resume summary for this candidate. "
         f"Name: {name}. Experience: {years} years. Top skills: {skills}. "
-        f"Target role: {target_role if target_role else 'general'}. "
+        f"Target roles: {', '.join(target_roles) if target_roles else 'general'}. "
         f"Make it confident, specific, and suitable for Indian job market. No buzzwords."
     )
     
@@ -102,7 +102,7 @@ async def generate_summary_via_gemini(profile: StructuredProfile, target_role: O
 async def generate_suggestions(
     profile: StructuredProfile,
     quality_scores: QualityScores,
-    target_role: Optional[str] = None
+    target_roles: Optional[List[str]] = None
 ) -> SuggestionSet:
     """
     Generates a full set of suggestions for the resume.
@@ -120,12 +120,13 @@ async def generate_suggestions(
     worst_bullets = all_weak_bullets[:5]
     
     # Step B - Improve bullets via Groq
+    role_context = ", ".join(target_roles) if target_roles else None
     bullet_improvements = await asyncio.gather(*[
-        improve_bullet_via_groq(bullet, role) for bullet, role in worst_bullets
+        improve_bullet_via_groq(bullet, role_context) for bullet, role in worst_bullets
     ])
     
     # Step C - Summary via Gemini
-    summary = await generate_summary_via_gemini(profile, target_role)
+    summary = await generate_summary_via_gemini(profile, target_roles)
     
     # Step D - Transferable skills (rule-based)
     detected_transferable = []

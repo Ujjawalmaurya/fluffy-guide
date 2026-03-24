@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 from loguru import logger
 from models.resume_analysis_models import ResumeAnalysisResult, StructuredProfile
 from services.pdf_extractor import extract_resume_text
@@ -10,7 +10,7 @@ from services.resume_suggester import generate_suggestions
 async def analyze_resume_pipeline(
     user_id: str,
     file_content: bytes,
-    target_role: Optional[str] = None
+    target_roles: Optional[List[str]] = None
 ) -> ResumeAnalysisResult:
     """
     Complete production-grade analyzer pipeline.
@@ -29,9 +29,18 @@ async def analyze_resume_pipeline(
     # The extractor now returns a default StructuredProfile() on failure
     profile = await extract_structured_profile(raw_text)
     
+    # 2b. Merge Manual and Inferred Target Roles
+    effective_roles = target_roles or []
+    if profile.inferred_target_roles:
+        # Add inferred roles that aren't already in the list (case-insensitive check)
+        existing_roles_lower = {r.lower() for r in effective_roles}
+        for role in profile.inferred_target_roles:
+            if role.lower() not in existing_roles_lower:
+                effective_roles.append(role)
+    
     # 3. Rule-based Scoring
     try:
-        quality_scores = calculate_quality_scores(profile, raw_text, target_role)
+        quality_scores = calculate_quality_scores(profile, raw_text, effective_roles)
     except Exception as e:
         logger.error(f"[RESUME_ORCHESTRATOR] Scoring failed: {e}")
         from models.resume_analysis_models import QualityScores
@@ -39,7 +48,7 @@ async def analyze_resume_pipeline(
 
     # 4. Suggestion Generation
     try:
-        suggestions = await generate_suggestions(profile, quality_scores, target_role)
+        suggestions = await generate_suggestions(profile, quality_scores, effective_roles)
     except Exception as e:
         logger.error(f"[RESUME_ORCHESTRATOR] Suggestion generation failed: {e}")
         from models.resume_analysis_models import SuggestionSet
@@ -52,7 +61,7 @@ async def analyze_resume_pipeline(
         quality_scores=quality_scores,
         suggestions=suggestions,
         overall_score=quality_scores.overall,
-        target_role=target_role,
+        target_roles=effective_roles,
         india_flags=suggestions.india_specific_flags,
         raw_text=raw_text
     )
@@ -71,7 +80,7 @@ async def analyze_resume_pipeline(
             "india_flags": suggestions.india_specific_flags,
             "raw_text": raw_text,
             "overall_score": quality_scores.overall,
-            "target_role": target_role,
+            "target_roles": effective_roles,
             "updated_at": "now()"
         }
         

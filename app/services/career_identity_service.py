@@ -87,5 +87,33 @@ class CareerIdentityService:
         else:
             log.error(f"Failed to update user {user_id}: {res}")
 
+    async def generate_and_store_identity(self, user_id: str):
+        """
+        Pulls the user's skills + preferences from Supabase and calls
+        update_user_identity.  Called lazily when a user has no embedding yet.
+        """
+        db = get_supabase()
+
+        # Fetch skill profile
+        skill_res = db.table("user_skill_profiles").select("skills").eq("user_id", user_id).maybe_single().execute()
+        skills_raw = (skill_res.data or {}).get("skills", []) if skill_res.data else []
+        skills = [s.get("skill_name", "") for s in skills_raw if s.get("skill_name")]
+
+        # Fetch career preferences
+        pref_res = db.table("user_preferences").select("career_interests, target_role").eq("user_id", user_id).maybe_single().execute()
+        prefs = pref_res.data or {}
+        interests = prefs.get("career_interests") or []
+        target_role = prefs.get("target_role") or "a suitable role"
+
+        if not skills:
+            log.warning(f"No skills found for user {user_id} — skipping identity generation")
+            return
+
+        experience = f"Targeting {target_role} in India"
+        intent = ", ".join(interests) if interests else target_role
+
+        await self.update_user_identity(user_id, skills, experience, intent)
+
+
 # Lazy singleton — instantiated here but model loads only on first use
 career_identity_service = CareerIdentityService()
