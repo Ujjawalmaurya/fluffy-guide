@@ -155,17 +155,17 @@ def format_qa_pairs(conversation_history: list) -> str:
 async def generate_next_question(
   session: dict,
   user_profile: dict,
-  openai_provider
+  llm_provider
 ) -> dict:
   """
-  Generates the next adaptive question using OpenAI.
+  Generates the next adaptive question using LLM.
   Reads the full adaptive_context from the session as conversation
   history so each question is informed by all previous answers.
 
   Args:
     session: current questionnaire_sessions DB record
     user_profile: combined user + profile data dict
-    gemini_provider: GeminiProvider instance
+    llm_provider: OllamaProvider instance
 
   Returns:
     Parsed question dict with question, type, options, phase info
@@ -202,31 +202,16 @@ async def generate_next_question(
     f"History={len(conversation_history)} messages."
   )
 
-  response_text = await openai_provider.complete(
+  from app.core.llm_config import LLM_TASKS
+  question_obj = await llm_provider.complete_json(
     messages=messages,
-    max_tokens=300
+    config=LLM_TASKS["assessment"]
   )
 
-  # Parse response — strip fences first
-  clean = strip_markdown_fences(response_text)
-
-  try:
-    question_obj = json.loads(clean)
-  except json.JSONDecodeError:
-    logger.error(
-      f"[ASSESSMENT] JSON parse failed on Q{next_q_number}. "
-      f"Raw (first 200): {response_text[:200]}"
-    )
-    # Retry once with an explicit correction message
-    retry_messages = messages + [{
-      "role": "user",
-      "content": "Your response was not valid JSON. "
-                 "Return only the JSON object with no other text."
-    }]
-    response_text = await openai_provider.complete(
-      retry_messages, max_tokens=200
-    )
-    question_obj = json.loads(strip_markdown_fences(response_text))
+  if not question_obj:
+    logger.error(f"[ASSESSMENT] Failed to generate valid question JSON for Q{next_q_number}")
+    # Fallback or error handling
+    raise ValueError("LLM failed to return valid question JSON")
 
   logger.info(
     f"[ASSESSMENT] Q{next_q_number} generated. "
@@ -240,16 +225,16 @@ async def generate_next_question(
 async def extract_skills_from_session(
   session: dict,
   user_profile: dict,
-  openai_provider
+  llm_provider
 ) -> dict:
   """
   Called once after assessment is fully complete.
-  Uses OpenAI for skill extraction.
+  Uses LLM for skill extraction.
 
   Args:
     session: completed questionnaire_sessions record
     user_profile: combined user + profile data dict
-    gemini_provider: GeminiProvider instance
+    llm_provider: OllamaProvider instance
 
   Returns:
     Dict with skills list, career_goals, blockers, work_preferences,
@@ -271,21 +256,18 @@ async def extract_skills_from_session(
     f"QA pairs={qa_pairs.count('Q:')}"
   )
 
-  response = await openai_provider.complete(
-    [{"role": "user", "content": prompt}]
+  from app.core.llm_config import LLM_TASKS
+  extracted = await llm_provider.complete_json(
+    messages=[{"role": "user", "content": prompt}],
+    config=LLM_TASKS["assessment_extraction"]
   )
 
-  clean = strip_markdown_fences(response)
-
-  try:
-    extracted = json.loads(clean)
-  except json.JSONDecodeError:
+  if not extracted:
     logger.error(
       f"[ASSESSMENT] Skill extraction JSON parse failed. "
-      f"user={user_profile.get('user_id')}. "
-      f"Raw (first 300): {response[:300]}"
+      f"user={user_profile.get('user_id')}."
     )
-    raise  # Let service layer handle with GEMINI_PARSE_ERROR
+    raise ValueError("LLM failed to extract skills")
 
   skills = extracted.get("skills", [])
   logger.info(

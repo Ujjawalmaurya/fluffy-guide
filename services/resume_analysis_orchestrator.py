@@ -71,7 +71,7 @@ async def analyze_resume_pipeline(
             "india_flags": suggestions.india_specific_flags,
             "raw_text": raw_text,
             "overall_score": quality_scores.overall,
-            "target_role": target_role,
+            "target_roles": [target_role] if target_role else [],
             "updated_at": "now()"
         }
         

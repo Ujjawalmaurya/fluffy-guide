@@ -8,8 +8,8 @@ import pdfplumber
 import docx
 from loguru import logger
 
-from app.modules.ai_chat.providers.gemini import GeminiProvider
-from app.shared.exceptions import ResumeNoText, GeminiParseError
+from app.modules.ai_chat.providers.ollama_provider import OllamaProvider
+from app.shared.exceptions import ResumeNoText, AppError
 
 # Optimized prompt for lower token usage and deeper insights
 RESUME_EXTRACTION_PROMPT = """Extract deep career insights from the resume below.
@@ -29,7 +29,7 @@ Resume:
 {resume_text}"""
 
 async def parse_resume(file_bytes: bytes, filename: str, content_type: str, user_id: str,
-                       gemini_provider: GeminiProvider) -> dict:
+                       llm_provider: OllamaProvider) -> dict:
     
     logger.info(f"[RESUME_PARSER] Extracting text for user={user_id} file={filename}")
     text = ""
@@ -61,22 +61,16 @@ async def parse_resume(file_bytes: bytes, filename: str, content_type: str, user
         
     formatted_prompt = RESUME_EXTRACTION_PROMPT.format(resume_text=text)
     
-    # Retry logic is handled inside gemini_provider.complete (backoff)
-    response = await gemini_provider.complete([{"role": "user", "content": formatted_prompt}])
-    
-    # Clean JSON output
-    clean_json = response.strip()
-    if "```" in clean_json:
-        clean_json = clean_json.split("```")[1]
-        if clean_json.startswith("json"):
-            clean_json = clean_json[4:]
-    clean_json = clean_json.strip()
-    
+    # Use complete_json for robust extraction with Ollama
+    from app.core import llm_config
     try:
-        parsed_dict = json.loads(clean_json)
-    except json.JSONDecodeError:
-        logger.error(f"[RESUME_PARSER] JSON parse failed. Response preview: {response[:200]}")
-        raise GeminiParseError()
+        parsed_dict = await llm_provider.complete_json(
+            messages=[{"role": "user", "content": formatted_prompt}],
+            config=llm_config.RESUME_PARSE
+        )
+    except Exception as e:
+        logger.error(f"[RESUME_PARSER] Extraction failed: {str(e)}")
+        raise AppError("LLM_PARSE_ERROR", "Could not parse resume data.")
         
     logger.info(f"[RESUME_PARSER] Success for user={user_id}. Skills={len(parsed_dict.get('skills', []))}")
     

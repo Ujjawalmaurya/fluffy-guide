@@ -18,14 +18,14 @@ async def get_report(
     Returns cached gap analysis report.
     Recomputes automatically if stale or missing.
     """
-    from app.modules.ai_chat.providers.gemini import get_gemini_instance
+    from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
     settings = get_settings
-    gemini = get_gemini_instance()
+    ollama = get_ollama_instance()
 
     report = await service.get_or_compute_report(
         user_id=current_user["id"],
         force_recompute=False,
-        gemini_provider=gemini
+        llm_provider=ollama
     )
     logger.info(
         f"[GAP_ANALYSIS] /report served. user={current_user['id']}. "
@@ -41,9 +41,9 @@ async def force_run(
     Forces a fresh recompute regardless of cache state.
     Called when user clicks 'Re-run Analysis'.
     """
-    from app.modules.ai_chat.providers.gemini import get_gemini_instance
+    from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
     settings = get_settings
-    gemini = get_gemini_instance()
+    ollama = get_ollama_instance()
 
     logger.info(
         f"[GAP_ANALYSIS] Manual recompute. user={current_user['id']}"
@@ -51,7 +51,7 @@ async def force_run(
     report = await service.get_or_compute_report(
         user_id=current_user["id"],
         force_recompute=True,
-        gemini_provider=gemini
+        llm_provider=ollama
     )
     return APIResponse(success=True, data=report)
 

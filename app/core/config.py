@@ -38,20 +38,8 @@ class Settings(BaseSettings):
     log_level: str = "DEBUG"
     cors_origins: str = "http://localhost:5173"
 
-    # OpenAI
-    openai_api_key: str = ""
-    openai_model: str = "gpt-4o-mini"
-    openai_max_retries: int = 3
-    openai_rpm_limit: int = 3
-
-    # Gemini
-    gemini_api_key: str = ""
-    gemini_max_retries: int = 3
-    gemini_rpm_limit: int = 12
-
-    # Groq
-    groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    # Ollama
+    ollama_host: str = "http://localhost:11434"
 
     # Assessment
     assessment_max_questions: int = 11

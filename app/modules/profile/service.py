@@ -42,8 +42,8 @@ class ProfileService:
         if len(file_bytes) > MAX_RESUME_SIZE:
             raise ResumeTooLarge()
 
-        from app.modules.ai_chat.providers.gemini import get_gemini_instance
-        result = await parse_resume(file_bytes, filename, content_type, user_id, get_gemini_instance())
+        from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
+        result = await parse_resume(file_bytes, filename, content_type, user_id, get_ollama_instance())
 
         self.repo.upsert_enrichment(
             user_id=user_id,

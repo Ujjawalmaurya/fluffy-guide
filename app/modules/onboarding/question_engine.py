@@ -91,19 +91,23 @@ async def generate_questions(user_type: str, state: str, career_interests: list[
     try:
         content = resp.json()["choices"][0]["message"]["content"]
         log.error(f"RAW SARVAM RESPONSE: {content}")
-        # Strip markdown code blocks if present
-        content = content.strip()
+        # 1. Remove <think> tags (reasoning)
+        import re
+        content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+
+        # 2. Strip markdown code blocks if present
         if "```" in content:
-            # Try to extract content between the first and second ```
             parts = content.split("```")
-            if len(parts) >= 3:
-                content = parts[1]
-                if content.startswith("json\n"):
-                    content = content[5:]
-                elif content.startswith("json"):
-                    content = content[4:]
+            for part in parts:
+                part = part.strip()
+                if part.lower().startswith("json"):
+                    content = part[4:].strip()
+                    break
+                if part.startswith("[") and "]" in part:
+                    content = part
+                    break
         
-        # Additionally find the first [ and last ] in the string to ignore <think> tags or conversational prefixes
+        # 3. Additionally find the first [ and last ] in the string
         start_idx = content.find("[")
         end_idx = content.rfind("]")
         if start_idx != -1 and end_idx != -1 and end_idx > start_idx:

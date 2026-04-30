@@ -66,11 +66,11 @@ async def build_roadmap(
     user_id: str,
     gaps: list,
     user_profile_data: dict,
-    gemini_provider
+    llm_provider
 ) -> tuple[dict, list]:
     """
     Fetches matching resources for top 5 gaps, then calls
-    Gemini to generate a personalized week-by-week roadmap.
+    LLM to generate a personalized week-by-week roadmap.
     Returns (roadmap_data, enriched_gaps_with_resource_ids).
     """
     top_gaps = gaps[:5]
@@ -110,15 +110,14 @@ async def build_roadmap(
         resources_json=json.dumps(all_resources, default=str)
     )
 
-    response = await gemini_provider.complete(
-        [{"role": "user", "content": prompt}]
+    from app.core.llm_config import LLM_TASKS
+    roadmap_data = await llm_provider.complete_json(
+        messages=[{"role": "user", "content": prompt}],
+        config=LLM_TASKS["gap_analysis"]
     )
 
-    clean = _strip_fences(response)
-    try:
-        roadmap_data = json.loads(clean)
-    except json.JSONDecodeError:
-        logger.error(f"[GAP_ANALYSIS] Failed to parse roadmap JSON: {clean[:200]}...")
+    if not roadmap_data:
+        logger.error(f"[GAP_ANALYSIS] Failed to get roadmap JSON from LLM")
         roadmap_data = {"roadmap": [], "motivational_note": "Keep learning!"}
 
     logger.info(

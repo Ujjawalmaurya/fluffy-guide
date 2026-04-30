@@ -13,12 +13,12 @@ logger = get_logger("GAP_ANALYSIS")
 async def get_or_compute_report(
     user_id: str,
     force_recompute: bool = False,
-    gemini_provider = None
+    llm_provider = None
 ) -> dict:
     """
     Primary entry point for gap analysis.
     Returns cached report if profile hash matches.
-    Recomputes (with Gemini roadmap call) only when:
+    Recomputes (with LLM roadmap call) only when:
         - force_recompute=True (user clicked Re-run)
         - No existing report
         - Report is marked stale
@@ -71,10 +71,10 @@ async def get_or_compute_report(
         **(prefs_row.data[0] if prefs_row.data else {})
     }
 
-    # Build roadmap (Gemini call) only if we have gaps
+    # Build roadmap (LLM call) only if we have gaps
     if gap_data["gaps"]:
         roadmap_data, enriched_gaps = await roadmap_builder.build_roadmap(
-            user_id, gap_data["gaps"], user_profile_data, gemini_provider
+            user_id, gap_data["gaps"], user_profile_data, llm_provider
         )
     else:
         roadmap_data = {"roadmap": [], "motivational_note": "Keep building your skills!"}
@@ -92,7 +92,7 @@ async def get_or_compute_report(
         "profile_hash": current_hash,
         "is_stale": False,
         "computed_at": now,
-        "gemini_raw_output": str(roadmap_data)[:2000]
+        "llm_raw_output": str(roadmap_data)[:2000]
     })
 
     return {**report, "from_cache": False,

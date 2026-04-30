@@ -12,9 +12,7 @@ from app.modules.skill_profile.repository import SkillProfileRepository
 from app.core.database import get_supabase
 from app.core.logger import get_logger
 from app.core.config import settings
-from app.shared.exceptions import (
-    OpenAIRateLimit, GeminiRateLimit, GeminiParseError, AppError
-)
+from app.shared.exceptions import AppError
 
 logger = get_logger("ASSESSMENT")
 
@@ -103,7 +101,7 @@ async def check_retake_eligibility(user_id: str) -> dict:
 async def start_assessment(
     user_id: str,
     user_profile: dict,
-    openai_provider
+    llm_provider
 ) -> dict:
     """
     Starts a new assessment or resumes an existing incomplete one.
@@ -123,7 +121,7 @@ async def start_assessment(
         
         # Re-generate the question for the current position
         question = await adaptive_engine.generate_next_question(
-            session, {**user_profile, "user_id": user_id}, openai_provider
+            session, {**user_profile, "user_id": user_id}, llm_provider
         )
         logger.info(
             f"[ASSESSMENT] Resuming session for user={user_id}. "
@@ -154,7 +152,7 @@ async def start_assessment(
     )
     
     question = await adaptive_engine.generate_next_question(
-        session, {**user_profile, "user_id": user_id}, openai_provider
+        session, {**user_profile, "user_id": user_id}, llm_provider
     )
     
     # Save first question to adaptive_context
@@ -184,7 +182,7 @@ async def submit_answer(
     answer: str,
     user_id: str,
     user_profile: dict,
-    openai_provider
+    llm_provider
 ) -> dict:
     """
     Accepts user answer, appends to context, generates next question
@@ -228,7 +226,7 @@ async def submit_answer(
     
     if is_complete:
         return await _complete_assessment(
-            session_id, user_id, new_context, user_profile, openai_provider
+            session_id, user_id, new_context, user_profile, llm_provider
         )
         
     # Generate next question
@@ -241,7 +239,7 @@ async def submit_answer(
     question = await adaptive_engine.generate_next_question(
         updated_session,
         {**user_profile, "user_id": user_id},
-        openai_provider
+        llm_provider
     )
     
     new_context.append({
@@ -273,7 +271,7 @@ async def _complete_assessment(
     user_id: str,
     final_context: list,
     user_profile: dict,
-    openai_provider
+    llm_provider
 ) -> dict:
     """
     Internal: finalizes assessment, extracts skills, updates profile.
@@ -285,7 +283,7 @@ async def _complete_assessment(
     extracted = await adaptive_engine.extract_skills_from_session(
         temp_session,
         {**user_profile, "user_id": user_id},
-        openai_provider
+        llm_provider
     )
     
     skills = extracted.get("skills", [])

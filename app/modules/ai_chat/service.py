@@ -5,7 +5,7 @@ Dependency-injected: receives ILLMProvider, so test with MockLLMProvider if need
 from typing import AsyncGenerator
 
 from app.modules.ai_chat.providers.base import ILLMProvider
-from app.modules.ai_chat.providers.gemini import GeminiProvider
+from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
 from app.modules.ai_chat.repository import ChatRepository
 from app.core.logger import get_logger
 
@@ -30,7 +30,7 @@ SYSTEM_PROMPT_HI = """आप SkillBridge AI हैं, भारत के क�
 class ChatService:
     def __init__(self, repo: ChatRepository):
         self.repo = repo
-        self.provider = GeminiProvider()
+        self.provider = get_ollama_instance()
 
     def _get_provider(self, language: str) -> ILLMProvider:
         return self.provider

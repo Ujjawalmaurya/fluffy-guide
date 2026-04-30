@@ -4,7 +4,8 @@ import asyncio
 from typing import List, Dict, Optional
 from loguru import logger
 from app.core.config import settings
-from app.modules.ai_chat.providers.gemini import get_gemini_instance
+from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
+from app.core.llm_config import CAREER_CHAT, BULLET_IMPROVE
 from models.resume_analysis_models import (
     StructuredProfile, QualityScores, SuggestionSet, BulletImprovement
 )
@@ -26,19 +27,11 @@ WEAK_PHRASING_MAP = {
     "driving": "Commercial Vehicle Operation",
 }
 
-async def improve_bullet_via_groq(bullet: str, role: Optional[str] = None) -> BulletImprovement:
+async def improve_bullet_via_llm(bullet: str, role: Optional[str] = None) -> BulletImprovement:
     """
-    Uses Groq to improve a single bullet point.
+    Uses local Ollama to improve a single bullet point.
     """
-    if not settings.groq_api_key:
-        logger.warning("[RESUME_ANALYSIS] Groq API key missing, skipping bullet improvement")
-        return BulletImprovement(original=bullet, improved=bullet, reason="Groq API key missing")
-
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {settings.groq_api_key}",
-        "Content-Type": "application/json"
-    }
+    ollama = get_ollama_instance()
     
     system_msg = (
         "You are a resume expert. Improve this weak resume bullet into a strong "
@@ -47,35 +40,29 @@ async def improve_bullet_via_groq(bullet: str, role: Optional[str] = None) -> Bu
     )
     user_msg = f"Original bullet: {bullet}. Role context: {role if role else 'General'}"
     
-    payload = {
-        "model": settings.groq_model,
-        "messages": [
+    try:
+        content = await ollama.complete_json([
             {"role": "system", "content": system_msg},
             {"role": "user", "content": user_msg}
-        ],
-        "response_format": {"type": "json_object"}
-    }
-
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, headers=headers, json=payload, timeout=10.0)
-            response.raise_for_status()
-            result = response.json()
-            content = json.loads(result["choices"][0]["message"]["content"])
-            return BulletImprovement(
-                original=bullet,
-                improved=content.get("improved", bullet),
-                reason=content.get("reason", "No reason provided")
-            )
+        ], config=BULLET_IMPROVE)
+        
+        return BulletImprovement(
+            original=bullet,
+            improved=content.get("improved", bullet),
+            reason=content.get("reason", "No reason provided")
+        )
     except Exception as e:
-        logger.error(f"[RESUME_ANALYSIS] Groq bullet improvement failed: {str(e)}")
+        logger.error(f"[RESUME_ANALYSIS] Bullet improvement failed: {str(e)}")
         return BulletImprovement(original=bullet, improved=bullet, reason=f"Improvement failed: {str(e)}")
 
-async def generate_summary_via_gemini(profile: StructuredProfile, target_role: Optional[str] = None) -> str:
+# Alias for backward compatibility if needed, though we should update callers
+improve_bullet_via_groq = improve_bullet_via_llm
+
+async def generate_summary_via_llm(profile: StructuredProfile, target_role: Optional[str] = None) -> str:
     """
-    Uses Gemini to generate a professional summary.
+    Uses local Ollama to generate a professional summary.
     """
-    gemini = get_gemini_instance()
+    ollama = get_ollama_instance()
     
     name = profile.full_name or "Professional"
     # skills is now a list of Skill objects
@@ -93,11 +80,14 @@ async def generate_summary_via_gemini(profile: StructuredProfile, target_role: O
     )
     
     try:
-        summary = await gemini.complete([{"role": "user", "content": prompt}], model_name="gemini-2.0-flash-lite-preview-02-05")
+        summary = await ollama.complete([{"role": "user", "content": prompt}], config=CAREER_CHAT)
         return summary.strip()
     except Exception as e:
-        logger.error(f"[RESUME_ANALYSIS] Gemini summary generation failed: {str(e)}")
+        logger.error(f"[RESUME_ANALYSIS] Summary generation failed: {str(e)}")
         return "Professional seeking opportunities to leverage skills and experience in a challenging role."
+
+# Aliases
+generate_summary_via_gemini = generate_summary_via_llm
 
 async def generate_suggestions(
     profile: StructuredProfile,

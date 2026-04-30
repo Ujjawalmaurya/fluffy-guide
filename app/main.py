@@ -9,6 +9,8 @@ from app.core.config import settings
 from app.core.database import test_connection
 from app.core.logger import get_logger
 from app.shared.exceptions import register_exception_handlers
+from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
+from app.core.llm_config import PRIMARY_MODEL, EXTRACTION_MODEL
 
 from app.modules.auth.router import router as auth_router
 from app.modules.onboarding.router import router as onboarding_router
@@ -67,9 +69,31 @@ async def startup():
     else:
         log.info("All systems go. Ready to serve requests.")
 
-    # [TODO] Re-enable provider heartbeat checks if needed. 
-    # Currently disabled due to httpx async client conflicts on some systems.
-    log.info("[STARTUP] AI Providers (Gemini/OpenAI) are configured and ready.")
+    # Ollama Health Check
+    ollama = get_ollama_instance()
+    health = await ollama.health_check()
+
+    if health["status"] != "healthy":
+        log.critical(
+            "[STARTUP] ✗ OLLAMA_NOT_RUNNING | "
+            f"fix: run 'ollama serve' then "
+            f"'ollama pull {PRIMARY_MODEL}' && "
+            f"'ollama pull {EXTRACTION_MODEL}'"
+        )
+    else:
+        available = health.get("models", [])
+        missing = [m for m in [PRIMARY_MODEL, EXTRACTION_MODEL]
+                   if not any(m in a for a in available)]
+        if missing:
+            log.warning(
+                f"[STARTUP] ⚠ MODELS_MISSING | missing={missing} | "
+                f"fix: ollama pull {' && ollama pull '.join(missing)}"
+            )
+        else:
+            log.info(
+                f"[STARTUP] ✓ OLLAMA_READY | "
+                f"primary={PRIMARY_MODEL} | extraction={EXTRACTION_MODEL}"
+            )
 
 
 @app.get("/health")
