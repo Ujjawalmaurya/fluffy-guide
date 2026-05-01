@@ -24,11 +24,25 @@ class AuthRepository:
         return result.data[0] if result.data else None
 
     def create_otp(self, email: str, otp_code: str, expires_at: str) -> dict:
-        result = self.db.table("otp_store").insert({
-            "email": email,
-            "otp_code": otp_code,
-            "expires_at": expires_at,
-        }).execute()
+        # 1. Try to find existing record
+        existing = self.db.table("otp_store").select("*").eq("email", email).execute()
+        
+        if existing.data:
+            # 2. Update existing
+            result = self.db.table("otp_store").update({
+                "otp_code": otp_code,
+                "expires_at": expires_at,
+                "is_used": False,
+            }).eq("email", email).execute()
+        else:
+            # 3. Insert new
+            result = self.db.table("otp_store").insert({
+                "email": email,
+                "otp_code": otp_code,
+                "expires_at": expires_at,
+                "is_used": False,
+            }).execute()
+            
         return result.data[0]
 
     def mark_otp_used(self, otp_id: str):

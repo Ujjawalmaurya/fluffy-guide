@@ -38,10 +38,20 @@ class AuthService:
             raise OTPAlreadyUsed()
 
         # Check expiry
-        expires_at = datetime.fromisoformat(record["expires_at"])
+        expires_at_str = record["expires_at"]
+        # Handle cases where DB might return different ISO formats
+        if isinstance(expires_at_str, str):
+            # Replace ' ' with 'T' for standard ISO format if needed
+            expires_at_str = expires_at_str.replace(" ", "T")
+            expires_at = datetime.fromisoformat(expires_at_str)
+        else:
+            expires_at = expires_at_str
+
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
+            
         if datetime.now(timezone.utc) > expires_at:
+            log.warning(f"OTP expired for {email}. Now={datetime.now(timezone.utc)}, Expires={expires_at}")
             raise OTPExpired()
 
         if record["otp_code"] != otp_code:
