@@ -4,6 +4,7 @@
 from app.core.database import get_supabase
 from app.core.logger import get_logger
 from app.shared.exceptions import AppError
+import difflib
 
 logger = get_logger("GAP_ANALYSIS")
 
@@ -30,11 +31,100 @@ SKILL_LEARNABILITY_OVERRIDES = {
   "digital marketing": 6, "ms office": 3
 }
 
+import re
+
+# Semantic aliases to help match skills that are named differently
+# Format: { "required_skill_name": ["alias1", "alias2", ...] }
+SKILL_ALIASES = {
+    "apis": ["rest apis", "backend", "fastapi", "flask", "api development", "ai/backend", "node.js"],
+    "backend": ["ai/backend", "node.js", "django", "golang", "server side", "python", "fastapi", "rest apis", "microservices"],
+    "frontend": ["react", "angular", "vue", "javascript", "css", "html", "web dev", "next.js", "typescript", "frontend developer"],
+    "automation": ["zapier", "make.com", "python", "automation specialist", "scripting", "no-code"],
+    "ms office": ["excel", "word", "powerpoint", "tally", "spreadsheet", "data entry"],
+    "digital marketing": ["social media", "seo", "content writing", "ads", "marketing", "branding"],
+    "soft skills": ["problem solving", "communication", "teamwork", "leadership", "critical thinking", "adaptability"]
+}
+
+def _find_matching_skill(skill_name: str, user_skills: dict) -> dict | None:
+    """
+    Finds a user skill that matches the required skill_name using:
+    1. Exact match (lowercased)
+    2. Substring match (word boundaries)
+    3. Semantic alias match (checking both directions)
+    4. Fuzzy match (difflib)
+    """
+    skill_name = skill_name.lower().strip()
+    
+    # 1. Exact match
+    if skill_name in user_skills:
+        return user_skills[skill_name]
+    
+    # 2. Substring match with word boundaries
+    # Using regex to ensure we match "c" in "c language" but not in "javascript"
+    for u_skill in user_skills:
+        pattern = rf"\b{re.escape(skill_name)}\b"
+        if re.search(pattern, u_skill):
+            return user_skills[u_skill]
+        
+        pattern_rev = rf"\b{re.escape(u_skill)}\b"
+        if re.search(pattern_rev, skill_name):
+            return user_skills[u_skill]
+            
+    # 3. Semantic Alias match
+    # Check if the required skill or any user skill belongs to the same alias group
+    for req_key, aliases in SKILL_ALIASES.items():
+        group = [req_key] + aliases
+        # If the required skill is in this group
+        if skill_name in group:
+            # Check if the user has ANY skill from this group
+            for member in group:
+                if member in user_skills:
+                    return user_skills[member]
+        
+    # 4. Fuzzy match
+    close_matches = difflib.get_close_matches(skill_name, list(user_skills.keys()), n=1, cutoff=0.7)
+    if close_matches:
+        return user_skills[close_matches[0]]
+        
+    return None
+
 def _proficiency_label(n: int) -> str:
     return {
         1: "Beginner", 2: "Elementary", 3: "Intermediate",
         4: "Advanced", 5: "Expert"
     }.get(n, "Unknown")
+
+CATEGORY_MAPPING = {
+    "software": "technology",
+    "it": "technology",
+    "coding": "technology",
+    "teaching": "education",
+    "school": "education",
+    "farming": "agriculture",
+    "construction": "construction",
+    "building": "construction",
+    "sales": "retail",
+    "marketing": "retail",
+    "bank": "finance",
+    "accounting": "finance",
+    "hotel": "hospitality",
+    "tourism": "hospitality",
+    "factory": "manufacturing",
+    "doctor": "healthcare",
+    "nurse": "healthcare",
+    "delivery": "logistics",
+    "driving": "logistics"
+}
+
+def _map_interests(interests: list[str]) -> list[str]:
+    mapped = set()
+    for i in interests:
+        low_i = i.lower()
+        mapped.add(low_i)  # Add original
+        for key, val in CATEGORY_MAPPING.items():
+            if key in low_i:
+                mapped.add(val)
+    return list(mapped)
 
 async def compute_gap(user_id: str) -> dict:
     """
@@ -72,28 +162,50 @@ async def compute_gap(user_id: str) -> dict:
         if user_profile.data else None
     )
 
-    # Fetch matching jobs
-    jobs_query = (
-        db.table("job_listings")
-        .select("required_skills, salary_max, category")
-        .eq("is_active", True)
-    )
+    # Fetch matching jobs with fallback
+    mapped_interests = _map_interests(career_interests)
+    logger.info(f"[GAP_ENGINE] mapped_interests={mapped_interests}, state={state}")
+    
+    # Try 1: Exact match (State + Interests)
+    jobs_query = db.table("job_listings").select("required_skills, salary_max, category").eq("is_active", True)
     if state:
         jobs_query = jobs_query.eq("location_state", state)
-    if career_interests:
-        jobs_query = jobs_query.in_("category", career_interests)
-
+    if mapped_interests:
+        jobs_query = jobs_query.in_("category", mapped_interests)
+    
     jobs_result = jobs_query.limit(200).execute()
     jobs = jobs_result.data or []
+    logger.info(f"[GAP_ENGINE] Try 1 (Exact): Found {len(jobs)} jobs")
+    match_type = "local_targeted"
 
+    # Try 2: Interests only (National)
+    if not jobs and mapped_interests:
+        jobs_result = db.table("job_listings").select("required_skills, salary_max, category").eq("is_active", True).in_("category", mapped_interests).limit(200).execute()
+        jobs = jobs_result.data or []
+        logger.info(f"[GAP_ENGINE] Try 2 (Interests Only): Found {len(jobs)} jobs")
+        match_type = "national_targeted"
+
+    # Try 3: State only (All categories)
+    if not jobs and state:
+        jobs_result = db.table("job_listings").select("required_skills, salary_max, category").eq("is_active", True).eq("location_state", state).limit(200).execute()
+        jobs = jobs_result.data or []
+        logger.info(f"[GAP_ENGINE] Try 3 (State Only): Found {len(jobs)} jobs")
+        match_type = "local_broad"
+
+    # Try 4: All active jobs (Global baseline)
     if not jobs:
-        total_jobs = 0
-        logger.warning(f"[GAP_ANALYSIS] No job data found for state={state}. Analysis will only show strengths.")
+        jobs_result = db.table("job_listings").select("required_skills, salary_max, category").eq("is_active", True).limit(200).execute()
+        jobs = jobs_result.data or []
+        logger.info(f"[GAP_ENGINE] Try 4 (Global): Found {len(jobs)} jobs")
+        match_type = "all_active"
+
+    total_jobs = len(jobs)
+    if total_jobs == 0:
+        logger.warning(f"[GAP_ANALYSIS] No job data found at all. Analysis will only show strengths.")
     else:
-        total_jobs = len(jobs)
         logger.info(
             f"[GAP_ANALYSIS] Analyzing {total_jobs} jobs for "
-            f"user={user_id}. state={state}"
+            f"user={user_id}. match_type={match_type}, state={state}"
         )
 
     # Build required skills frequency map
@@ -120,14 +232,14 @@ async def compute_gap(user_id: str) -> dict:
     strengths, gaps, partial_matches = [], [], []
 
     for skill_name, data in required_map.items():
-        frequency_pct = round(data["count"] / total_jobs * 100, 1)
+        frequency_pct = round(data["count"] / total_jobs * 100, 1) if total_jobs > 0 else 0
         avg_salary = (
             data["salary_total"] / data["salary_count"]
             if data["salary_count"] > 0 else 0
         )
         salary_uplift = round(avg_salary / max_salary, 3)
 
-        user_entry = user_skills.get(skill_name)
+        user_entry = _find_matching_skill(skill_name, user_skills)
         user_prof = user_entry["proficiency_numeric"] if user_entry else 0
         required_level = 3  # Intermediate is the default job requirement
 

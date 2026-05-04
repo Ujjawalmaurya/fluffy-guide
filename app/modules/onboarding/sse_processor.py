@@ -47,7 +47,7 @@ async def process_stream(session_id: str, repo: OnboardingRepository) -> AsyncGe
     # Step 1 — fetch session data
     yield _sse_event(1, 10, "📥 Receiving your responses...", "running")
     await asyncio.sleep(0.5)
-    session = repo.get_questionnaire_session(session_id)
+    session = await repo.get_questionnaire_session(session_id)
     if not session:
         yield _sse_event(1, 10, "❌ Session not found.", "error")
         return
@@ -61,7 +61,7 @@ async def process_stream(session_id: str, repo: OnboardingRepository) -> AsyncGe
 
     # Step 3 — load job market data
     user_id = session["user_id"]
-    user_result = repo.get_user(user_id)
+    user_result = await repo.get_user(user_id)
     # get state from profile
     profile_result = repo.db.table("user_profiles").select("state").eq("user_id", user_id).execute()
     state = profile_result.data[0]["state"] if profile_result.data else "India"
@@ -86,8 +86,8 @@ async def process_stream(session_id: str, repo: OnboardingRepository) -> AsyncGe
     # Step 5 — save extracted skills
     yield _sse_event(5, 80, "🧠 Preparing your personalized dashboard...", "running")
     await asyncio.sleep(0.6)
-    repo.save_extracted_skills(session_id, extracted_skills)
-    repo.mark_onboarding_done(user_id)
+    await repo.save_extracted_skills(session_id, extracted_skills)
+    await repo.mark_onboarding_done(user_id)
     log.info(f"Onboarding processing complete for user={user_id}. Skills: {extracted_skills}")
 
     # Step 6 — done

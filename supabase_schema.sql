@@ -258,8 +258,10 @@ ALTER TABLE questionnaire_sessions
 
 -- Modify users table (add assessment tracking)
 ALTER TABLE users
-  ADD COLUMN IF NOT EXISTS quick_assessment_done BOOLEAN DEFAULT false;
+  ADD COLUMN IF NOT EXISTS quick_assessment_done BOOLEAN DEFAULT false,
   -- True after first quick_assessment session completed
+  ADD COLUMN IF NOT EXISTS assessment_nudge_shown BOOLEAN DEFAULT false;
+  -- True after the first time the nudge is shown to user
 
 -- Modify profile_enrichments (add Gemini extraction columns)
 ALTER TABLE profile_enrichments
@@ -319,7 +321,7 @@ CREATE TABLE IF NOT EXISTS gap_analysis_reports (
   --   resource_name, resource_url, milestone}]
   is_stale             BOOLEAN DEFAULT false,
   -- Set true when profile_hash no longer matches current profile
-  gemini_raw_output    TEXT,
+  llm_raw_output       TEXT,
   -- Stored for debugging. Never shown to user.
   computed_at          TIMESTAMPTZ DEFAULT now(),
   created_at           TIMESTAMPTZ DEFAULT now()
@@ -427,3 +429,63 @@ VALUES
  'Professional Hindi communication for workplace settings',
  ARRAY['hindi','communication','language','soft skills'],
  'language', true, 0, 4, 1, 'hi', 'self_paced');
+-- NEW TABLE: government_schemes
+-- Benefits and welfare schemes for workers and citizens.
+CREATE TABLE IF NOT EXISTS government_schemes (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name             TEXT NOT NULL,
+  description      TEXT,
+  eligibility      JSONB DEFAULT '{}', -- {min_age, max_age, target_roles: [], state: []}
+  benefits         TEXT,
+  url              TEXT,
+  category         TEXT, -- 'financial' | 'insurance' | 'skilling' | 'entrepreneurship'
+  is_active        BOOLEAN DEFAULT true,
+  created_at       TIMESTAMPTZ DEFAULT now()
+);
+
+-- NEW TABLE: competitive_exams
+-- Entrance and recruitment exams for students.
+CREATE TABLE IF NOT EXISTS competitive_exams (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name             TEXT NOT NULL,
+  description      TEXT,
+  exam_date        DATE,
+  registration_deadline DATE,
+  category         TEXT, -- 'ssc' | 'upsc' | 'banking' | 'engineering' | 'medical'
+  education_level  TEXT, -- '10th' | '12th' | 'graduate'
+  url              TEXT,
+  is_active        BOOLEAN DEFAULT true,
+  created_at       TIMESTAMPTZ DEFAULT now()
+);
+
+-- NEW TABLE: trade_market_data
+-- Regional demand data for blue collar trades.
+CREATE TABLE IF NOT EXISTS trade_market_data (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trade_name       TEXT NOT NULL, -- 'Electrician', 'Plumber', etc.
+  state            TEXT NOT NULL,
+  city             TEXT,
+  demand_level     TEXT DEFAULT 'Medium', -- 'High' | 'Medium' | 'Low'
+  avg_salary_min   INTEGER,
+  avg_salary_max   INTEGER,
+  trending_up      BOOLEAN DEFAULT true,
+  updated_at       TIMESTAMPTZ DEFAULT now()
+);
+
+-- SEED: Govt Schemes
+INSERT INTO government_schemes (name, description, category, url) VALUES
+('PM-SVANidhi', 'Micro-credit facility for street vendors to restart their livelihoods.', 'financial', 'https://pmsvanidhi.mohua.gov.in/'),
+('e-Shram', 'National database of unorganized workers for delivery of social security benefits.', 'insurance', 'https://eshram.gov.in/'),
+('PM-KMY', 'Pension scheme for small and marginal farmers.', 'financial', 'https://maandhan.in/');
+
+-- SEED: Competitive Exams
+INSERT INTO competitive_exams (name, exam_date, category, education_level, url) VALUES
+('SSC CGL 2024', '2024-09-01', 'ssc', 'graduate', 'https://ssc.nic.in/'),
+('IBPS PO', '2024-10-15', 'banking', 'graduate', 'https://ibps.in/'),
+('UPSC Civil Services', '2025-05-25', 'upsc', 'graduate', 'https://upsc.gov.in/');
+
+-- SEED: Trade Market Data
+INSERT INTO trade_market_data (trade_name, state, city, demand_level, avg_salary_min, avg_salary_max) VALUES
+('Electrician', 'Maharashtra', 'Mumbai', 'High', 15000, 25000),
+('Plumber', 'Maharashtra', 'Pune', 'Medium', 12000, 20000),
+('Welder', 'Uttar Pradesh', 'Lucknow', 'High', 18000, 30000);

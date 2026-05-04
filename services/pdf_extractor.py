@@ -78,26 +78,29 @@ def extract_text_via_ocr(content: bytes) -> str:
 def extract_resume_text(content: bytes) -> str:
     """
     Main entry point for robust PDF text extraction.
+    Prioritizes speed (fitz) with smart fallbacks.
     """
-    logger.info("[PDF_EXTRACTOR] starting multi-stage extraction...")
+    logger.info("[PDF_EXTRACTOR] starting extraction...")
     
-    # Stage 1: PyMuPDF
+    # Stage 1: PyMuPDF (Fastest)
     text = extract_text_via_fitz(content)
     
-    # Stage 2: pdfplumber fallback (if text is very short/missing)
-    if len(text.strip()) < 100:
-        logger.info("[PDF_EXTRACTOR] text thin or missing via fitz, trying pdfplumber...")
-        plumber_text = extract_text_via_pdfplumber(content)
-        if len(plumber_text) > len(text):
-            text = plumber_text
+    # If we got substantial text, skip slow fallbacks
+    if len(text.strip()) > 100:
+        logger.info(f"[PDF_EXTRACTOR] fitz success (len={len(text)}), skipping fallbacks.")
+        return normalize_text(text)
+    
+    # Stage 2: pdfplumber fallback (More accurate layout, slower)
+    logger.info("[PDF_EXTRACTOR] fitz results thin, trying pdfplumber...")
+    plumber_text = extract_text_via_pdfplumber(content)
+    if len(plumber_text) > len(text):
+        text = plumber_text
             
-    # Stage 3: OCR fallback
+    # Stage 3: OCR fallback (Very slow, last resort)
     if len(text.strip()) < 100:
-        logger.warning("[PDF_EXTRACTOR] no text extraction successful, falling back to OCR...")
+        logger.warning("[PDF_EXTRACTOR] no selectable text found, attempting OCR...")
         text = extract_text_via_ocr(content)
         
-    # Result normalization
     clean_text = normalize_text(text)
-    
-    logger.info(f"[PDF_EXTRACTOR] extraction complete. Length: {len(clean_text)}")
+    logger.info(f"[PDF_EXTRACTOR] extraction complete. Final length: {len(clean_text)}")
     return clean_text

@@ -63,6 +63,12 @@ def register_exception_handlers(app: FastAPI):
 
 
 # Convenience — pre-built errors for each error code
+class Conflict(AppError):
+    def __init__(self, message="Conflict"): super().__init__("CONFLICT", message, 409)
+
+class UserNotFound(AppError):
+    def __init__(self, message="User not found."): super().__init__("USER_NOT_FOUND", message, 404)
+
 class OTPNotFound(AppError):
     def __init__(self): super().__init__("AUTH_OTP_NOT_FOUND", "No OTP found for this email. Request a new one.", 404)
 

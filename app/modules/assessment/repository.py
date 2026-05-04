@@ -135,3 +135,16 @@ async def get_history(user_id: str) -> list:
     .execute()
   )
   return result.data or []
+
+async def log_activity(user_id: str, activity_type: str, description: str, metadata: dict = None):
+    """Logs a user activity to the database."""
+    try:
+        supabase = get_supabase()
+        supabase.table("user_activities").insert({
+            "user_id": user_id,
+            "activity_type": activity_type,
+            "description": description,
+            "metadata": metadata or {}
+        }).execute()
+    except Exception as e:
+        logger.error(f"Failed to log activity {activity_type} for user={user_id}: {e}")

@@ -2,14 +2,16 @@
 # Thin layer — parses request, calls service, returns response.
 # All business logic lives in service.py.
 
+from typing import List
 from fastapi import APIRouter, Depends
 from app.modules.assessment import service
-from app.modules.assessment.schemas import (
-    SubmitAnswerRequest, StartAssessmentResponse,
-    AnswerResponse, AssessmentStatusResponse
+from app.schemas.request.assessment import AssessmentAnswerRequest
+from app.schemas.response.assessment import (
+    StartAssessmentResponse, AnswerResponse, 
+    AssessmentStatusResponse, AssessmentHistoryItem
 )
 from app.shared.dependencies import get_current_user
-from app.shared.response_models import APIResponse
+from app.shared.response_models import APIResponse, ok
 from app.core.logger import get_logger
 
 logger = get_logger("ASSESSMENT_ROUTER")
@@ -43,7 +45,7 @@ async def _get_user_profile(current_user: dict) -> dict:
         "user_id": user_id
     }
 
-@router.post("/start", response_model=APIResponse)
+@router.post("/start", response_model=APIResponse[StartAssessmentResponse])
 async def start_assessment(
     current_user: dict = Depends(get_current_user)
 ):
@@ -66,11 +68,11 @@ async def start_assessment(
         f"can_resume={result.get('can_resume')}"
     )
     
-    return APIResponse(success=True, data=result)
+    return ok(data=result)
 
-@router.post("/answer", response_model=APIResponse)
+@router.post("/answer", response_model=APIResponse[AnswerResponse])
 async def submit_answer(
-    body: SubmitAnswerRequest,
+    body: AssessmentAnswerRequest,
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -89,9 +91,9 @@ async def submit_answer(
         llm_provider=get_ollama_instance()
     )
     
-    return APIResponse(success=True, data=result)
+    return ok(data=result)
 
-@router.get("/status", response_model=APIResponse)
+@router.get("/status", response_model=APIResponse[AssessmentStatusResponse])
 async def get_status(
     current_user: dict = Depends(get_current_user)
 ):
@@ -114,12 +116,12 @@ async def get_status(
         if user.data else False
     )
     
-    return APIResponse(success=True, data={
+    return ok(data={
         **eligibility,
         "has_completed": has_completed
     })
 
-@router.get("/history", response_model=APIResponse)
+@router.get("/history", response_model=APIResponse[List[AssessmentHistoryItem]])
 async def get_history(
     current_user: dict = Depends(get_current_user)
 ):
@@ -136,4 +138,4 @@ async def get_history(
         "created_at": s["created_at"]
     } for s in sessions]
     
-    return APIResponse(success=True, data=history)
+    return ok(data=history)

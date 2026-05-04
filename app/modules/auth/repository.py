@@ -48,15 +48,30 @@ class AuthRepository:
     def mark_otp_used(self, otp_id: str):
         self.db.table("otp_store").update({"is_used": True}).eq("id", otp_id).execute()
 
-    def upsert_user(self, email: str) -> dict:
-        # Insert if not exists, return existing if already there
+    def create_user(self, email: str, role: str) -> dict:
+        """Create a new user with a specific role. Fails if user already exists."""
+        result = self.db.table("users").insert({
+            "email": email,
+            "user_type": role,
+            "onboarding_done": False
+        }).execute()
+        return result.data[0]
+
+    def get_or_create_user(self, email: str) -> dict:
+        """Fetch user by email. Note: Signup handles the creation with role."""
+        result = self.db.table("users").select("*").eq("email", email).execute()
+        if result.data:
+            return result.data[0]
+        
+        # This shouldn't be reached in the new flow as signup is mandatory for new users
+        # but kept for backward compatibility/robustness.
         result = self.db.table("users").upsert({"email": email}, on_conflict="email").execute()
         return result.data[0]
 
     def get_user_by_id(self, user_id: str) -> dict | None:
-        result = self.db.table("users").select("*").eq("id", user_id).single().execute()
-        return result.data
+        result = self.db.table("users").select("*").eq("id", user_id).execute()
+        return result.data[0] if result.data else None
 
     def get_user_by_email(self, email: str) -> dict | None:
-        result = self.db.table("users").select("*").eq("email", email).single().execute()
-        return result.data
+        result = self.db.table("users").select("*").eq("email", email).execute()
+        return result.data[0] if result.data else None

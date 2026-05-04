@@ -2,15 +2,16 @@
 
 from fastapi import APIRouter, Depends
 from app.modules.gap_analysis import service
+from app.schemas.response.gap_analysis import GapAnalysisReportResponse
 from app.shared.dependencies import get_current_user
-from app.shared.response_models import APIResponse
+from app.shared.response_models import APIResponse, ok
 from app.core.config import settings as get_settings
 from app.core.logger import get_logger
 
 logger = get_logger("GAP_ANALYSIS_ROUTER")
 router = APIRouter(prefix="/gap-analysis", tags=["Gap Analysis"])
 
-@router.get("/report", response_model=APIResponse)
+@router.get("/report", response_model=APIResponse[GapAnalysisReportResponse])
 async def get_report(
     current_user: dict = Depends(get_current_user)
 ):
@@ -19,7 +20,6 @@ async def get_report(
     Recomputes automatically if stale or missing.
     """
     from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
-    settings = get_settings
     ollama = get_ollama_instance()
 
     report = await service.get_or_compute_report(
@@ -31,9 +31,9 @@ async def get_report(
         f"[GAP_ANALYSIS] /report served. user={current_user['id']}. "
         f"from_cache={report.get('from_cache')}"
     )
-    return APIResponse(success=True, data=report)
+    return ok(data=report)
 
-@router.post("/run", response_model=APIResponse)
+@router.post("/run", response_model=APIResponse[GapAnalysisReportResponse])
 async def force_run(
     current_user: dict = Depends(get_current_user)
 ):
@@ -42,7 +42,6 @@ async def force_run(
     Called when user clicks 'Re-run Analysis'.
     """
     from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
-    settings = get_settings
     ollama = get_ollama_instance()
 
     logger.info(
@@ -53,7 +52,7 @@ async def force_run(
         force_recompute=True,
         llm_provider=ollama
     )
-    return APIResponse(success=True, data=report)
+    return ok(data=report)
 
 @router.get("/roadmap", response_model=APIResponse)
 async def get_roadmap(
@@ -63,9 +62,9 @@ async def get_roadmap(
     from app.modules.gap_analysis import repository
     report = await repository.get_by_user_id(current_user["id"])
     if not report:
-        return APIResponse(success=True, data={"roadmap": [],
-            "message": "Run gap analysis first."})
-    return APIResponse(success=True, data={
+        return ok(data={"roadmap": [], "message": "Run gap analysis first."})
+    
+    return ok(data={
         "roadmap": report.get("roadmap", []),
-        "motivational_note": report.get("gemini_raw_output", "")
+        "motivational_note": report.get("llm_raw_output", "")
     })

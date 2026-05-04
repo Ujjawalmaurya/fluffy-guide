@@ -19,24 +19,48 @@ def generate_otp() -> str:
     return "".join(random.choices(string.digits, k=settings.otp_length))
 
 
-def create_access_token(user_id: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_access_expire_minutes)
-    payload = {"sub": user_id, "type": "access", "exp": expire}
+def create_access_token(user_id: str, role: str | None = None) -> str:
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=settings.jwt_access_expire_minutes)
+    payload = {
+        "sub": user_id,
+        "type": "access",
+        "exp": int(expire.timestamp()),
+        "iat": int(now.timestamp())
+    }
+    if role:
+        payload["role"] = role
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
 def create_refresh_token(user_id: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_expire_days)
-    payload = {"sub": user_id, "type": "refresh", "exp": expire}
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(days=settings.jwt_refresh_expire_days)
+    payload = {
+        "sub": user_id,
+        "type": "refresh",
+        "exp": int(expire.timestamp()),
+        "iat": int(now.timestamp())
+    }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
 def decode_token(token: str) -> dict | None:
     """Returns payload dict or None if invalid/expired."""
     try:
-        return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        # Add leeway to handle clock drift
+        return jwt.decode(
+            token, 
+            settings.jwt_secret_key, 
+            algorithms=[settings.jwt_algorithm],
+            options={"leeway": 60}
+        )
     except JWTError as e:
-        log.warning(f"Token decode failed: {e}")
+        try:
+            unverified = jwt.get_unverified_claims(token)
+            log.warning(f"Token decode failed: {e} | Claims: {unverified}")
+        except:
+            log.warning(f"Token decode failed: {e} | Could not get unverified claims")
         return None
 
 

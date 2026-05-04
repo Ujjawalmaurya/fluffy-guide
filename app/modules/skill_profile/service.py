@@ -1,28 +1,29 @@
 from uuid import UUID
 from collections import defaultdict
+from datetime import datetime, timezone
 from app.modules.skill_profile.repository import SkillProfileRepository
-from app.modules.skill_profile.schemas import UserSkillProfile, SkillSummary, SkillItem
+from app.schemas.response.skill_profile import SkillProfileResponse, SkillSummaryResponse
 
 class SkillProfileService:
     def __init__(self, repo: SkillProfileRepository):
         self.repo = repo
         
-    def get_profile(self, user_id: str | UUID) -> UserSkillProfile:
+    def get_profile(self, user_id: str | UUID) -> SkillProfileResponse:
         db_profile = self.repo.get_by_user_id(user_id)
         if not db_profile:
             # Return empty profile if none exists
-            return UserSkillProfile(
+            return SkillProfileResponse(
                 user_id=user_id if isinstance(user_id, UUID) else UUID(user_id),
                 skills=[],
                 profile_version=1,
                 resume_contributed=False,
                 assessment_contributed=False,
-                updated_at=datetime.utcnow()
+                updated_at=datetime.now(timezone.utc)
             )
             
-        return UserSkillProfile(**db_profile)
+        return SkillProfileResponse(**db_profile)
         
-    def get_summary(self, user_id: str | UUID) -> SkillSummary:
+    def get_summary(self, user_id: str | UUID) -> SkillSummaryResponse:
         profile = self.get_profile(user_id)
         skills = profile.skills
         
@@ -43,7 +44,7 @@ class SkillProfileService:
         # Top 5 sorted by proficiency_numeric desc
         top_5 = sorted(skills, key=lambda x: x.proficiency_numeric, reverse=True)[:5]
         
-        return SkillSummary(
+        return SkillSummaryResponse(
             total_skills=len(skills),
             by_category=dict(by_category),
             top_5=top_5,

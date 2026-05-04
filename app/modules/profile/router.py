@@ -3,9 +3,12 @@ from fastapi import APIRouter, Depends, UploadFile, File
 
 from app.modules.profile.service import ProfileService
 from app.modules.profile.repository import ProfileRepository
-from app.modules.profile.schemas import ProfileUpdateIn
+from app.schemas.request.profile import ProfileUpdateRequest
+from app.schemas.response.profile import (
+    ProfileResponse, ParsedResumeResponse, CompletionScoreResponse
+)
 from app.shared.dependencies import get_db, get_current_user
-from app.shared.response_models import ok
+from app.shared.response_models import ok, APIResponse
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -14,14 +17,14 @@ def _get_service(db=Depends(get_db)) -> ProfileService:
     return ProfileService(ProfileRepository(db))
 
 
-@router.get("/me")
+@router.get("/me", response_model=APIResponse[ProfileResponse])
 async def get_profile(current_user: dict = Depends(get_current_user), service: ProfileService = Depends(_get_service)):
     return ok(data=service.get_profile(current_user["id"]))
 
 
-@router.patch("/me")
+@router.patch("/me", response_model=APIResponse[ProfileResponse])
 async def update_profile(
-    body: ProfileUpdateIn,
+    body: ProfileUpdateRequest,
     current_user: dict = Depends(get_current_user),
     service: ProfileService = Depends(_get_service),
 ):
@@ -29,7 +32,7 @@ async def update_profile(
     return ok(data=updated, message="Profile updated.")
 
 
-@router.post("/resume")
+@router.post("/resume", response_model=APIResponse[ParsedResumeResponse])
 async def upload_resume(
     resume: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
@@ -45,7 +48,7 @@ async def upload_resume(
     return ok(data=result)
 
 
-@router.get("/completion-score")
+@router.get("/completion-score", response_model=APIResponse[CompletionScoreResponse])
 async def get_completion(
     current_user: dict = Depends(get_current_user),
     service: ProfileService = Depends(_get_service),

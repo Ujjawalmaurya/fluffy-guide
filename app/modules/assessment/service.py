@@ -130,8 +130,8 @@ async def start_assessment(
         return {
             "session_id": session["id"],
             "question": question,
-            "phase": question["phase"],
-            "phase_name": question["phase_name"],
+            "phase": question.get("phase"),
+            "phase_name": question.get("phase_name"),
             "question_number": session["current_question_number"] + 1,
             "can_resume": True,
             **eligibility
@@ -169,8 +169,8 @@ async def start_assessment(
     return {
         "session_id": session["id"],
         "question": question,
-        "phase": question["phase"],
-        "phase_name": question["phase_name"],
+        "phase": question.get("phase"),
+        "phase_name": question.get("phase_name"),
         "question_number": 1,
         "can_resume": False,
         **eligibility
@@ -251,7 +251,7 @@ async def submit_answer(
         session_id,
         adaptive_context=new_context,
         current_question_number=new_q_number,
-        phase=question["phase"],
+        phase=question.get("phase"),
         last_question_at=_utcnow().isoformat()
     )
     
@@ -259,7 +259,7 @@ async def submit_answer(
     return {
         "session_id": session_id,
         "question": question,
-        "phase": question["phase"],
+        "phase": question.get("phase"),
         "question_number": new_q_number,
         "is_complete": False,
         "retakes_remaining": eligibility["retakes_remaining"]
@@ -316,6 +316,13 @@ async def _complete_assessment(
         f"[ASSESSMENT] Completed for user={user_id}. "
         f"skills={len(skills)}. "
         f"goals={extracted.get('career_goals', [])}"
+    )
+    
+    await repository.log_activity(
+        user_id,
+        "assessment_complete",
+        f"Completed AI Assessment with {len(skills)} skills verified.",
+        {"skills_count": len(skills), "session_id": session_id}
     )
     
     eligibility = await check_retake_eligibility(user_id)

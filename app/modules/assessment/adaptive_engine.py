@@ -124,10 +124,14 @@ def extract_covered_topics(conversation_history: list) -> str:
   for msg in conversation_history:
     if msg.get("role") == "assistant":
       try:
-        obj = json.loads(msg["content"])
-        if "skill_probing" in obj:
-          topics.append(obj["skill_probing"])
-      except (json.JSONDecodeError, KeyError):
+        content = msg.get("content", "")
+        if not content:
+          continue
+        # Use strip_markdown_fences if needed, but usually content is clean here
+        obj = json.loads(content)
+        if isinstance(obj, dict) and obj.get("skill_probing"):
+          topics.append(str(obj["skill_probing"]))
+      except (json.JSONDecodeError, TypeError, KeyError):
         pass
   return ", ".join(topics) if topics else "none yet"
 
@@ -203,15 +207,40 @@ async def generate_next_question(
   )
 
   from app.core.llm_config import LLM_TASKS
-  question_obj = await llm_provider.complete_json(
+  from app.schemas.internal.llm_outputs import AssessmentQuestionLLMOutput
+  question_raw = await llm_provider.complete_json(
     messages=messages,
     config=LLM_TASKS["assessment"]
   )
 
-  if not question_obj:
-    logger.error(f"[ASSESSMENT] Failed to generate valid question JSON for Q{next_q_number}")
-    # Fallback or error handling
-    raise ValueError("LLM failed to return valid question JSON")
+  try:
+    if not question_raw:
+        raise ValueError("Empty response from LLM")
+    
+    # Validate and heal if needed
+    # If phase is missing, we inject it BEFORE validation if possible, 
+    # or let the model handle it if we make it optional in the model.
+    # Actually, let's just validate and handle errors.
+    
+    question_model = AssessmentQuestionLLMOutput.model_validate(question_raw)
+    question_obj = question_model.model_dump()
+    
+  except Exception as e:
+    logger.error(f"[ASSESSMENT] Failed to validate question JSON: {e}")
+    # Fallback healing logic (partially kept from original)
+    question_obj = question_raw if question_raw else {}
+    
+    if "phase" not in question_obj:
+      question_obj["phase"] = phase_num
+    if "phase_name" not in question_obj:
+      question_obj["phase_name"] = phase["name"]
+    if "question" not in question_obj or not question_obj["question"]:
+      question_obj["question"] = "Can you tell me more about your experience in this field?"
+      question_obj["question_type"] = "text"
+    if "question_type" not in question_obj:
+      question_obj["question_type"] = "text"
+    if "skill_probing" not in question_obj:
+      question_obj["skill_probing"] = "general experience"
 
   logger.info(
     f"[ASSESSMENT] Q{next_q_number} generated. "
@@ -257,17 +286,23 @@ async def extract_skills_from_session(
   )
 
   from app.core.llm_config import LLM_TASKS
-  extracted = await llm_provider.complete_json(
+  from app.schemas.internal.llm_outputs import SkillExtractionLLMOutput
+  extracted_raw = await llm_provider.complete_json(
     messages=[{"role": "user", "content": prompt}],
     config=LLM_TASKS["assessment_extraction"]
   )
 
-  if not extracted:
-    logger.error(
-      f"[ASSESSMENT] Skill extraction JSON parse failed. "
-      f"user={user_profile.get('user_id')}."
-    )
-    raise ValueError("LLM failed to extract skills")
+  try:
+    if not extracted_raw:
+        raise ValueError("Empty response from LLM")
+    
+    extracted_model = SkillExtractionLLMOutput.model_validate(extracted_raw)
+    extracted = extracted_model.model_dump()
+    
+  except Exception as e:
+    logger.error(f"[ASSESSMENT] Skill extraction validation failed: {e}")
+    # Fallback to empty extraction
+    extracted = SkillExtractionLLMOutput().model_dump()
 
   skills = extracted.get("skills", [])
   logger.info(

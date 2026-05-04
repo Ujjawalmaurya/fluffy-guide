@@ -1,6 +1,6 @@
 """
 Ollama Provider — Local LLM implementation using OpenAI-compatible API.
-Hardware: GTX 1050 Mobile 6GB VRAM.
+Hardware: GTX 1050 Mobile 4GB VRAM.
 Models: qwen3:4b (Multilingual), phi4-mini (JSON).
 """
 import time
@@ -40,218 +40,244 @@ class OllamaProvider(ILLMProvider):
         """Rough token estimation (chars/4) for logging."""
         return len(text) // 4
 
-    async def _rate_limit_check(self):
-        """Matches openai_provider interface. No logic needed for local Ollama."""
-        pass
+    def _clean_content(self, content: str) -> str:
+        """Centralized removal of reasoning/thinking tags."""
+        import re
+        # Remove <think>...</think> or just <think> if </think> is missing
+        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+        content = re.sub(r"<think>.*", "", content, flags=re.DOTALL)
+        # Strip other potential reasoning markers
+        content = re.sub(r"Thought:.*", "", content, flags=re.DOTALL)
+        return content.strip()
 
-    async def complete(self, messages: list[dict], language: str = "en", **kwargs) -> str:
-        """
-        Match OpenAI interface: return full response string.
-        Parameters match exactly for zero-change swap.
-        """
-        task_config = kwargs.pop("config", kwargs.pop("task_config", None))
+    def _prepare_params(self, messages: list[dict], task_config: llm_config.TaskConfig, **kwargs) -> dict:
+        """Unified parameter preparation ensuring GPU and context settings."""
         model = kwargs.get("model") or (task_config.model if task_config else llm_config.PRIMARY_MODEL)
-        task_name = task_config.task_name if task_config else "generic_complete"
         
-        tokens_in = sum(self._estimate_tokens(m.get("content", "")) for m in messages)
-        logger.info(f"[LLM] ▶ INFERENCE_START | model={model} | task={task_name} | tokens_in=~{tokens_in}")
-        
-        start_time = time.time()
-        try:
-            # Prepare parameters
-            task_name = kwargs.pop("task", None) or (task_config.task_name if task_config else "generic_complete")
-            
-            params = {
-                "model": model,
-                "messages": messages,
-                "temperature": kwargs.get("temperature", task_config.temperature if task_config else 0.7),
-                "max_tokens": kwargs.get("max_tokens", task_config.max_tokens if task_config else 512),
-                **{k: v for k, v in kwargs.items() if k not in ["model", "temperature", "max_tokens", "task", "config", "task_config"]}
-            }
-            
-            response = await self.client.chat.completions.create(**params)
-            content = response.choices[0].message.content or ""
-            
-            duration = round(time.time() - start_time, 2)
-            tokens_out = self._estimate_tokens(content)
-            
-            logger.info(f"[LLM] ✓ INFERENCE_COMPLETE | model={model} | tokens_out=~{tokens_out} | duration={duration}s")
-            if duration > 5:
-                logger.warning(f"[LLM] ⚠ SLOW_RESPONSE | duration={duration}s | threshold=5s")
-            
-            return content
-        except Exception as e:
-            logger.error(f"[LLM] ✗ INFERENCE_FAILED | model={model} | error={str(e)}")
-            raise AppError("OLLAMA_ERROR", f"Ollama call failed: {str(e)}")
-
-    async def stream(self, messages: list[dict], language: str = "en", **kwargs) -> AsyncGenerator[str, None]:
-        """
-        Match OpenAI interface: yield response tokens.
-        Parameters match exactly for zero-change swap.
-        """
-        task_config = kwargs.pop("config", kwargs.pop("task_config", None))
-        model = kwargs.get("model") or (task_config.model if task_config else llm_config.PRIMARY_MODEL)
-        task_name = task_config.task_name if task_config else "generic_stream"
-        
-        tokens_in = sum(self._estimate_tokens(m.get("content", "")) for m in messages)
-        logger.info(f"[LLM] ▶ INFERENCE_START | model={model} | task={task_name} | tokens_in=~{tokens_in}")
-        
-        start_time = time.time()
-        full_content = ""
-        try:
-            task_name = kwargs.pop("task", None) or (task_config.task_name if task_config else "generic_stream")
-            
-            params = {
-                "model": model,
-                "messages": messages,
-                "temperature": kwargs.get("temperature", task_config.temperature if task_config else 0.7),
-                "max_tokens": kwargs.get("max_tokens", task_config.max_tokens if task_config else 512),
-                "stream": True,
-                **{k: v for k, v in kwargs.items() if k not in ["model", "temperature", "max_tokens", "task", "config", "task_config", "stream"]}
-            }
-            
-            stream = await self.client.chat.completions.create(**params)
-            async for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    token = chunk.choices[0].delta.content
-                    full_content += token
-                    yield token
-            
-            duration = round(time.time() - start_time, 2)
-            tokens_out = self._estimate_tokens(full_content)
-            logger.info(f"[LLM] ✓ INFERENCE_COMPLETE | model={model} | tokens_out=~{tokens_out} | duration={duration}s")
-            if duration > 5:
-                logger.warning(f"[LLM] ⚠ SLOW_RESPONSE | duration={duration}s | threshold=5s")
-                
-        except Exception as e:
-            logger.error(f"[LLM] ✗ INFERENCE_FAILED | model={model} | error={str(e)}")
-            raise AppError("OLLAMA_STREAM_ERROR", f"Ollama stream failed: {str(e)}")
-
-    async def complete_json(self, messages: list[dict], **kwargs) -> dict:
-        """
-        Specialized method for JSON extraction with retries and fence stripping.
-        """
-        task_config = kwargs.pop("config", None) or kwargs.pop("task_config", None)
-        task_name = kwargs.pop("task", None) or (task_config.task_name if task_config else "json_extraction")
-        
-        # Use a copy of messages to avoid in-place modification
+        # Inject GLOBAL_RULES if not already present
         local_messages = [m.copy() for m in messages]
-        
-        # Ensure system prompt for JSON
         system_found = False
         for m in local_messages:
             if m["role"] == "system":
-                if "Return ONLY raw JSON" not in m["content"]:
-                    m["content"] += "\nReturn ONLY raw JSON. No markdown tags. No conversational text."
+                if "HARD RULES" not in m["content"]:
+                    m["content"] = f"{llm_config.GLOBAL_RULES}\n\n{m['content']}"
                 system_found = True
                 break
         if not system_found:
-            local_messages.insert(0, {"role": "system", "content": "Return ONLY raw JSON. No markdown. No explanation."})
+            local_messages.insert(0, {"role": "system", "content": llm_config.GLOBAL_RULES})
+
+        # Context and prediction limits
+        context_window = kwargs.get("context_window") or (task_config.context_window if task_config else llm_config.OLLAMA_PARAMS["num_ctx"])
+        max_tokens = kwargs.get("max_tokens") or (task_config.max_tokens if task_config else llm_config.OLLAMA_PARAMS["num_predict"])
+        
+        # Merge options
+        options = llm_config.OLLAMA_PARAMS.copy()
+        options.update({
+            "num_ctx": context_window,
+            "num_predict": max_tokens,
+            "temperature": kwargs.get("temperature", task_config.temperature if task_config else options["temperature"]),
+            "num_gpu": 999, # Explicitly force GPU layers
+            "low_vram": True # Help with GTX 1050
+        })
+        
+        json_mode = kwargs.get("json_mode", False)
+        
+        return {
+            "model": model,
+            "messages": local_messages,
+            "temperature": options["temperature"],
+            "max_tokens": max_tokens,
+            "timeout": kwargs.get("timeout", 120.0), # Increased for local GPU patience
+            "response_format": {"type": "json_object"} if json_mode else None,
+            "extra_body": {
+                "options": options,
+                "format": "json" if json_mode else None,
+                "keep_alive": "10m" # Reduced keep_alive to free VRAM for other tasks
+            }
+        }
+
+    async def complete(self, messages: list[dict], language: str = "en", **kwargs) -> str:
+        task_config = kwargs.pop("config", kwargs.pop("task_config", None))
+        task_name = task_config.task_name if task_config else "generic_complete"
+        
+        params = self._prepare_params(messages, task_config, **kwargs)
+        logger.info(f"[LLM] ▶ INFERENCE_START | model={params['model']} | task={task_name}")
+        
+        start_time = time.time()
+        try:
+            response = await self.client.chat.completions.create(**params)
+            content = response.choices[0].message.content or ""
+            content = self._clean_content(content)
+            
+            duration = round(time.time() - start_time, 2)
+            logger.info(f"[LLM] ✓ INFERENCE_COMPLETE | duration={duration}s")
+            
+            return content
+        except Exception as e:
+            logger.error(f"[LLM] ✗ INFERENCE_FAILED | error={str(e)}")
+            raise AppError("OLLAMA_ERROR", f"Ollama call failed: {str(e)}")
+
+    async def stream(self, messages: list[dict], language: str = "en", **kwargs) -> AsyncGenerator[str, None]:
+        task_config = kwargs.pop("config", kwargs.pop("task_config", None))
+        task_name = task_config.task_name if task_config else "generic_stream"
+        
+        params = self._prepare_params(messages, task_config, **kwargs)
+        params["stream"] = True
+        
+        logger.info(f"[LLM] ▶ STREAM_START | model={params['model']} | task={task_name}")
+        
+        start_time = time.time()
+        try:
+            stream = await self.client.chat.completions.create(**params)
+            buffer = ""
+            in_think = False
+            
+            async for chunk in stream:
+                if not chunk.choices or not chunk.choices[0].delta.content:
+                    continue
+                
+                token = chunk.choices[0].delta.content
+                buffer += token
+                
+                if not in_think:
+                    # Check for opening tag in buffer
+                    if "<think" in buffer.lower():
+                        # If we have the closing bracket of the opening tag, enter think mode
+                        if ">" in buffer:
+                            in_think = True
+                            # Remove everything before and including the opening tag
+                            idx = buffer.lower().find(">")
+                            buffer = buffer[idx+1:]
+                        else:
+                            # Keep buffering until we see >
+                            continue
+                    else:
+                        # No think tag started, yield and clear buffer
+                        yield buffer
+                        buffer = ""
+                else:
+                    # Currently in think mode, wait for closing tag
+                    if "</think>" in buffer.lower():
+                        in_think = False
+                        # Extract content AFTER the closing tag
+                        idx = buffer.lower().find("</think>")
+                        buffer = buffer[idx+8:]
+                        if buffer:
+                            yield buffer
+                            buffer = ""
+                    else:
+                        # In think mode, don't yield anything
+                        # Keep buffer size manageable
+                        if len(buffer) > 200:
+                            buffer = buffer[-50:] # Just keep a tail to match </think>
+            
+            # Yield any remaining non-tag content
+            if buffer and not in_think:
+                yield buffer
+
+            logger.info(f"[LLM] ✓ STREAM_COMPLETE | duration={round(time.time() - start_time, 2)}s")
+        except Exception as e:
+            logger.error(f"[LLM] ✗ STREAM_FAILED | error={str(e)}")
+            raise AppError("OLLAMA_STREAM_ERROR", str(e))
+
+    async def complete_json(self, messages: list[dict], **kwargs) -> dict:
+        task_config = kwargs.pop("config", None) or kwargs.pop("task_config", None)
+        task_name = task_config.task_name if task_config else "json_extraction"
+        
+        # Ensure JSON directive is in system prompt
+        local_messages = [m.copy() for m in messages]
+        json_directive = "IMPORTANT: Return ONLY raw JSON. No markdown code blocks. No reasoning tags. Start with { or [."
+        
+        system_found = False
+        for m in local_messages:
+            if m["role"] == "system":
+                m["content"] += f"\n\n{json_directive}"
+                system_found = True
+                break
+        if not system_found:
+            local_messages.insert(0, {"role": "system", "content": json_directive})
 
         attempts = 0
-        max_json_attempts = 3
+        max_attempts = 3
+        last_error = ""
         
-        logger.info(f"[LLM] Entering complete_json | max_attempts={max_json_attempts}")
-
-        while attempts < max_json_attempts:
+        while attempts < max_attempts:
             attempts += 1
-            
-            # Smart fallback: 
-            # - If attempt 3, try the OTHER model (primary <-> extraction)
             current_model = kwargs.get("model") or (task_config.model if task_config else llm_config.PRIMARY_MODEL)
             
-            if attempts == 3:
-                fallback_model = llm_config.PRIMARY_MODEL if current_model == llm_config.EXTRACTION_MODEL else llm_config.EXTRACTION_MODEL
-                kwargs["model"] = fallback_model
-                logger.info(f"[LLM] JSON fallback: switching from {current_model} to {fallback_model}")
-            else:
-                kwargs["model"] = current_model
-
-            logger.info(f"[LLM] JSON extraction attempt {attempts}/{max_json_attempts} | model={kwargs.get('model')}")
+            # Fallback strategy
+            if attempts == 2:
+                kwargs["model"] = llm_config.EXTRACTION_MODEL
+                logger.info(f"[LLM] Retrying JSON with extraction model: {llm_config.EXTRACTION_MODEL}")
             
-            response_text = ""
             try:
-                # Use a slightly higher timeout for JSON tasks
-                response_text = await self.complete(messages=local_messages, **kwargs)
-                
-                if not response_text.strip():
-                    logger.warning(f"[LLM] Empty response on attempt {attempts}")
-                    raise ValueError("Empty response from model")
+                # Force JSON mode for Ollama and PASS CONFIG BACK
+                response_text = await self.complete(
+                    messages=local_messages, 
+                    json_mode=True, 
+                    config=task_config,
+                    **kwargs
+                )
+                if not response_text:
+                    raise ValueError("Empty response")
 
-                # --- ROBUST CLEANING SEQUENCE ---
-                clean_text = response_text.strip()
-                
-                # 1. Aggressive <think> removal
+                # Clean and isolate JSON
                 import re
-                if "<think>" in clean_text:
-                    if "</think>" in clean_text:
-                        clean_text = re.sub(r'<think>.*?</think>', '', clean_text, flags=re.DOTALL).strip()
-                    else:
-                        clean_text = re.sub(r'<think>.*', '', clean_text, flags=re.DOTALL).strip()
-
-                # 2. Extract from markdown code blocks
-                if "```" in clean_text:
-                    fences = re.findall(r'```(?:json)?\s*(.*?)```', clean_text, re.DOTALL | re.IGNORECASE)
-                    if fences:
-                        # Try each fence until one parses
-                        for content in fences:
-                            content = content.strip()
-                            if content.startswith("{") or content.startswith("["):
-                                try:
-                                    return json.loads(content)
-                                except json.JSONDecodeError:
-                                    continue
-                    
-                    # If fences failed or no valid JSON in fences, try to strip fences and continue
-                    clean_text = re.sub(r'```(?:json)?', '', clean_text)
-                    clean_text = re.sub(r'```', '', clean_text).strip()
-
-                # 3. Locate JSON boundaries
-                start_obj = clean_text.find("{")
-                start_arr = clean_text.find("[")
+                text = response_text.strip()
                 
-                start_idx = -1
-                if start_obj != -1 and start_arr != -1:
-                    start_idx = min(start_obj, start_arr)
-                elif start_obj != -1:
-                    start_idx = start_obj
-                elif start_arr != -1:
-                    start_idx = start_arr
-
+                # Remove common markdown clutter
+                text = re.sub(r"```json\s*", "", text)
+                text = re.sub(r"```\s*", "", text)
+                
+                # Find the boundaries of the JSON object/array
+                start_idx = text.find("{")
+                if start_idx == -1: start_idx = text.find("[")
+                
                 if start_idx != -1:
-                    is_obj = (start_obj == start_idx)
-                    end_char = "}" if is_obj else "]"
-                    end_idx = clean_text.rfind(end_char)
+                    # Truncate text before JSON
+                    text = text[start_idx:]
                     
-                    if end_idx != -1 and end_idx > start_idx:
-                        clean_text = clean_text[start_idx : end_idx + 1]
+                    # Try to find the last closing brace/bracket
+                    end_idx = text.rfind("}")
+                    if end_idx == -1: end_idx = text.rfind("]")
+                    
+                    if end_idx != -1:
+                        text = text[:end_idx+1]
+                    else:
+                        # HEALING: Truncated JSON? Try to close it.
+                        # This is a very basic heuristic.
+                        open_braces = text.count("{") - text.count("}")
+                        if open_braces > 0:
+                            text += "}" * open_braces
                 
-                # 4. Final attempt to parse
                 try:
-                    return json.loads(clean_text)
+                    return json.loads(text)
                 except json.JSONDecodeError:
-                    # Strip any non-JSON noise at start/end
-                    clean_text = re.sub(r'^[^\{\[]*', '', clean_text)
-                    clean_text = re.sub(r'[^\}\]]*$', '', clean_text)
-                    return json.loads(clean_text)
+                    # Healing attempt 2: fix common typos
+                    # 1. Remove trailing commas in arrays/objects
+                    text = re.sub(r",\s*([\]\}])", r"\1", text) 
+                    # 2. Quote unquoted keys (simple alphanumeric)
+                    text = re.sub(r"([{,]\s*)([a-zA-Z0-9_]+)\s*:", r'\1"\2":', text)
+                    # 3. Handle single quotes as double quotes
+                    text = text.replace("'", '"') 
+                    # 4. Remove ellipsis if model truncated list
+                    text = text.replace("...", "")
+                    
+                    try:
+                        return json.loads(text)
+                    except json.JSONDecodeError as final_e:
+                        logger.warning(f"[LLM] JSON healing failed. Text snippet: {text[:100]}...")
+                        raise final_e
 
-            except (json.JSONDecodeError, ValueError, Exception) as e:
-                logger.warning(f"[LLM] JSON parse failed on attempt {attempts}: {str(e)}")
-                snippet = response_text[:200].replace('\n', ' ')
-                logger.debug(f"[LLM] Failed Response Snippet: {snippet}...")
-                
-                if attempts < max_json_attempts:
-                    # Retry with reinforcement
-                    # If it was empty, maybe prompt it to actually speak
-                    prompt_extension = " Please do not return an empty response." if not response_text.strip() else ""
-                    local_messages.append({
-                        "role": "user", 
-                        "content": f"Your previous response was invalid. {prompt_extension} Please return ONLY the JSON object, starting with {{ or [, and ending with }} or ]. No other text."
-                    })
+            except Exception as e:
+                last_error = str(e)
+                logger.warning(f"[LLM] JSON attempt {attempts} failed: {last_error}")
+                if attempts < max_attempts:
+                    # Provide feedback for next attempt
+                    local_messages.append({"role": "user", "content": f"ERROR: Your last response was not valid JSON. {last_error}. Return ONLY the corrected JSON object."})
                 else:
-                    logger.error(f"[LLM] JSON extraction failed after {max_json_attempts} attempts.")
-                    logger.error(f"[LLM] FULL FAILED RESPONSE: \n{response_text}")
-                    raise AppError("JSON_EXTRACTION_FAILED", "Could not get valid JSON from local LLM.")
+                    logger.error(f"[LLM] Final JSON failure for task={task_name}. Raw text: {response_text[:200] if 'response_text' in locals() else 'None'}")
+                    raise AppError("JSON_EXTRACTION_FAILED", f"Final failure: {last_error}")
 
 
 

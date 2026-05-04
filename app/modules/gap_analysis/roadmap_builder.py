@@ -111,14 +111,25 @@ async def build_roadmap(
     )
 
     from app.core.llm_config import LLM_TASKS
-    roadmap_data = await llm_provider.complete_json(
+    from app.schemas.internal.llm_outputs import RoadmapLLMOutput
+
+    roadmap_raw = await llm_provider.complete_json(
         messages=[{"role": "user", "content": prompt}],
-        config=LLM_TASKS["gap_analysis"]
+        config=LLM_TASKS["roadmap"]
     )
 
-    if not roadmap_data:
-        logger.error(f"[GAP_ANALYSIS] Failed to get roadmap JSON from LLM")
-        roadmap_data = {"roadmap": [], "motivational_note": "Keep learning!"}
+    try:
+        if not roadmap_raw:
+            raise ValueError("Empty response from LLM")
+        
+        # Validate using Pydantic model
+        roadmap_model = RoadmapLLMOutput.model_validate(roadmap_raw)
+        roadmap_data = roadmap_model.model_dump()
+        
+    except Exception as e:
+        logger.error(f"[GAP_ANALYSIS] Failed to validate roadmap JSON: {e}")
+        # Fallback to safe defaults
+        roadmap_data = RoadmapLLMOutput().model_dump()
 
     logger.info(
         f"[GAP_ANALYSIS] Roadmap built for user={user_id}. "

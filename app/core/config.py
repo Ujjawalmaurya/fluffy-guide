@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # JWT
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
-    jwt_access_expire_minutes: int = 30
+    jwt_access_expire_minutes: int = 360
     jwt_refresh_expire_days: int = 7
 
     # OTP

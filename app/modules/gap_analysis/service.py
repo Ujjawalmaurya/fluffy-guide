@@ -39,7 +39,11 @@ async def get_or_compute_report(
             f"[GAP_ANALYSIS] Cache hit for user={user_id}. "
             f"Computed {existing.get('computed_at')}"
         )
-        return {**existing, "from_cache": True}
+        return {
+            **existing,
+            "from_cache": True,
+            "motivational_note": existing.get("llm_raw_output", "")
+        }
 
     reason = (
         "forced" if force_recompute
@@ -92,7 +96,7 @@ async def get_or_compute_report(
         "profile_hash": current_hash,
         "is_stale": False,
         "computed_at": now,
-        "llm_raw_output": str(roadmap_data)[:2000]
+        "llm_raw_output": roadmap_data.get("motivational_note", "")
     })
 
     return {**report, "from_cache": False,
