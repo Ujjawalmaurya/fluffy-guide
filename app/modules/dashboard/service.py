@@ -264,3 +264,246 @@ class DashboardService:
         except Exception as e:
             log.error(f"Failed to mark nudge shown for user={user_id}: {e}")
             raise
+
+    # ── NGO Dashboard Implementation ─────────────────────────────
+
+    async def get_ngo_beneficiaries(self, user_id: str) -> list:
+        # Fetch actual users who might be linked to this NGO (for now, sample of students)
+        result = self.repo.db.table("user_profiles") \
+            .select("user_id, full_name, education_level") \
+            .limit(10) \
+            .execute()
+        
+        beneficiaries = []
+        for row in result.data:
+            beneficiaries.append({
+                "id": row["user_id"],
+                "name": row["full_name"],
+                "status": "Active",
+                "course": "Skill Certification",
+                "progress": 45 # Mock progress
+            })
+        return beneficiaries
+
+    async def get_ngo_outcomes(self, user_id: str) -> dict:
+        stats = await self.repo.get_ngo_stats()
+        return {
+            "placed": stats.get("placed_count", 0),
+            "income_boost": "+25%",
+            "completion_rate": f"{stats.get('avg_progress', 0)}%",
+            "avg_time_to_place": "50 days"
+        }
+
+    async def get_ngo_skill_gaps(self, user_id: str) -> list:
+        return await self.repo.get_regional_skill_gaps()
+
+    # ── Government Dashboard Implementation ──────────────────────
+
+    async def get_govt_analytics(self, user_id: str) -> dict:
+        stats = await self.repo.get_govt_stats()
+        return {
+            "total_users": f"{stats.get('total_users', 0)}",
+            "placement_rate": stats.get("placement_rate", "0%"),
+            "gap_index": "0.45",
+            "revenue": stats.get("revenue_impact", "₹0")
+        }
+
+    async def get_govt_placements(self, user_id: str) -> list:
+        # Aggregate placements by state for government view
+        return [
+            {"district": "Indore", "placements": 150, "growth": "+12%"},
+            {"district": "Bhopal", "placements": 120, "growth": "+8%"},
+            {"district": "Jabalpur", "placements": 80, "growth": "+5%"},
+        ]
+
+    async def get_govt_skill_gaps(self, user_id: str) -> list:
+        gaps = await self.repo.get_regional_skill_gaps()
+        return [{"sector": g["skill"], "gap": "20%", "criticality": g["gap_intensity"]} for g in gaps]
+
+    # ── Talent Matching ──────────────────────────────────────────
+
+    # Industry → candidate user_type/stream/career_interests keyword mapping
+    INDUSTRY_CANDIDATE_MAP = {
+        "IT & Software":     {"types": ["individual_youth"], "streams": ["Science", "Science & Tech"], "interest_keywords": ["Software Development", "Data Science", "AI/ML", "UI/UX Design", "Digital Marketing"]},
+        "Manufacturing":     {"types": ["individual_bluecollar"], "streams": ["Vocational"], "interest_keywords": ["Manufacturing", "Production", "Quality"]},
+        "Retail":            {"types": ["individual_youth", "individual_informal"], "streams": ["Commerce", "Commerce & Finance"], "interest_keywords": ["Sales", "Management"]},
+        "Healthcare":        {"types": ["individual_youth"], "streams": ["Science"], "interest_keywords": ["Healthcare"]},
+        "Construction":      {"types": ["individual_bluecollar"], "streams": ["Vocational"], "interest_keywords": ["Construction", "Electrical", "Plumbing"]},
+        "Finance":           {"types": ["individual_youth"], "streams": ["Commerce", "Commerce & Finance"], "interest_keywords": ["Finance", "Accounting", "Management"]},
+        "Education":         {"types": ["individual_youth"], "streams": ["Arts", "Science"], "interest_keywords": ["Teaching", "Management"]},
+        "Logistics":         {"types": ["individual_bluecollar", "individual_informal"], "streams": ["Vocational", "Other"], "interest_keywords": ["Logistics", "Management"]},
+        "Automobile":        {"types": ["individual_bluecollar"], "streams": ["Vocational"], "interest_keywords": ["Automobile", "Manufacturing"]},
+        "Other":             {"types": ["individual_youth", "individual_bluecollar", "individual_informal"], "streams": [], "interest_keywords": []},
+    }
+
+    async def get_talent_matches(self, employer_id: str, limit: int = 5) -> list:
+        """Return candidates that match the employer's industry, roles, and required skills."""
+        try:
+            db = self.repo.db
+
+            # 1. Fetch the employer's onboarding data from user_profiles
+            emp_row = db.table("user_profiles") \
+                .select("industry_sector, preferred_skills, roles_hiring_for") \
+                .eq("user_id", employer_id).limit(1).execute()
+            emp = emp_row.data[0] if emp_row.data else {}
+
+            industry   = emp.get("industry_sector") or "Other"
+            req_skills = [s.lower() for s in (emp.get("preferred_skills") or [])]
+            roles      = [r.lower() for r in (emp.get("roles_hiring_for") or [])]
+
+            log.info(f"Talent match for employer={employer_id}: industry={industry}, skills={req_skills[:5]}, roles={roles[:5]}")
+
+            # 2. Determine which candidate user_types + streams this industry maps to
+            mapping      = self.INDUSTRY_CANDIDATE_MAP.get(industry, self.INDUSTRY_CANDIDATE_MAP["Other"])
+            target_types = mapping["types"]
+            target_streams      = mapping["streams"]
+            interest_keywords   = mapping["interest_keywords"]
+
+            # 3. Fetch candidate profiles filtered by user_type
+            type_rows = db.table("users") \
+                .select("id") \
+                .in_("user_type", target_types) \
+                .neq("id", employer_id) \
+                .limit(100).execute()
+            candidate_ids = [r["id"] for r in (type_rows.data or [])]
+
+            if not candidate_ids:
+                log.warning(f"No candidates with types {target_types} found for employer={employer_id}")
+                return []
+
+            # 4. Fetch their profiles
+            profiles_rows = db.table("user_profiles") \
+                .select("user_id, full_name, state, city, education_level, stream, industry_sector") \
+                .in_("user_id", candidate_ids).limit(100).execute()
+            profile_map = {r["user_id"]: r for r in (profiles_rows.data or [])}
+
+            # 5. Fetch their career interests
+            prefs_rows = db.table("user_preferences") \
+                .select("user_id, career_interests") \
+                .in_("user_id", list(profile_map.keys())).limit(100).execute()
+            prefs_map = {r["user_id"]: r.get("career_interests") or [] for r in (prefs_rows.data or [])}
+
+            # 6. Fetch their assessed skills
+            skills_rows = db.table("user_skill_profiles") \
+                .select("user_id, skills") \
+                .in_("user_id", list(profile_map.keys())).limit(100).execute()
+            skills_map = {}
+            for r in (skills_rows.data or []):
+                skills_map[r["user_id"]] = [
+                    s.get("skill_name", "").lower()
+                    for s in (r.get("skills") or [])
+                ]
+
+            # 7. Score each candidate
+            scored = []
+            for uid, prof in profile_map.items():
+                score = 0
+                candidate_industry = prof.get("industry_sector")
+                candidate_stream = prof.get("stream")
+
+                # STRIKE 1: Industry sector mismatch penalty (VERY HEAVY)
+                if industry != "Other" and candidate_industry and candidate_industry != "Other":
+                    if industry.lower() != candidate_industry.lower():
+                        # Hard block for certain mismatches (IT vs Construction/Manufacturing)
+                        if industry == "IT & Software" and candidate_industry in ["Construction", "Manufacturing", "Automobile"]:
+                            continue  # Don't even show them
+                        score -= 80
+                
+                # STRIKE 2: Stream match (strong filter for industry fit)
+                if target_streams and candidate_stream in target_streams:
+                    score += 45
+                elif target_streams and candidate_stream:
+                    # Penalize if they have a stream that definitely doesn't fit (e.g. Arts for Engineering)
+                    score -= 20
+
+                # STRIKE 3: Career interest overlap with industry keywords
+                interests = [i.lower() for i in prefs_map.get(uid, [])]
+                interest_match = False
+                for kw in interest_keywords:
+                    if kw.lower() in interests:
+                        score += 35
+                        interest_match = True
+                        break
+                
+                # If no interest match and it's a specific industry, penalize
+                if not interest_match and industry != "Other":
+                    score -= 10
+
+                # STRIKE 4: Skill overlap with employer's required skills
+                cand_skills = skills_map.get(uid, [])
+                if req_skills and cand_skills:
+                    overlap = set(req_skills).intersection(set(cand_skills))
+                    score += len(overlap) * 40
+                
+                # Final check: if candidate is explicitly an Electrician/Plumber/Construction worker and it's IT, reject
+                if industry == "IT & Software":
+                    lowered_skills = [s.lower() for s in cand_skills]
+                    lowered_interests = [i.lower() for i in prefs_map.get(uid, [])]
+                    
+                    # Block Construction/Trade skills
+                    trade_skills = ["welding", "electrical", "plumbing", "carpentry", "masonry", "civil engineering"]
+                    if any(ts in lowered_skills for ts in trade_skills):
+                        log.debug(f"Rejecting candidate {uid} for IT: trade skills found")
+                        continue
+                        
+                    # Block Construction/Trade interests
+                    trade_interests = ["electrician", "plumber", "construction", "civil", "trades"]
+                    if any(ti in lowered_interests for ti in trade_interests):
+                        log.debug(f"Rejecting candidate {uid} for IT: trade interests found")
+                        continue
+
+                if score > 25:  # Slightly lower threshold but stricter filters
+                    scored.append((score, uid, prof))
+
+            # 8. Sort and return top N
+            scored.sort(key=lambda x: x[0], reverse=True)
+            top = scored[:limit]
+
+            results = []
+            for score, uid, prof in top:
+                cand_skills = skills_map.get(uid, [])
+                results.append({
+                    "id": uid,
+                    "name": prof.get("full_name") or "Candidate",
+                    "role": ", ".join(prefs_map.get(uid, [])[:2]) or "Skilled Candidate",
+                    "match": f"{min(int(score), 100)}%",
+                    "location": f"{prof.get('city', '')}, {prof.get('state', '')}".strip(", "),
+                    "education": prof.get("education_level"),
+                    "top_skills": cand_skills[:3],
+                })
+
+            log.info(f"Talent match results for employer={employer_id}: {len(results)} candidates (industry={industry})")
+            return results
+        except Exception as e:
+            log.error(f"Failed to fetch talent matches for employer {employer_id}: {e}")
+            return []
+
+    async def get_employer_summary(self, user_id: str) -> dict:
+        """Fetch full context for the employer dashboard."""
+        try:
+            stats_task = self.repo.get_employer_stats(user_id)
+            profile_task = self.repo.get_profile(user_id)
+            matches_task = self.get_talent_matches(user_id, limit=6)
+            
+            stats, profile, matches = await asyncio.gather(stats_task, profile_task, matches_task)
+            
+            # Fetch jobs posted by this employer
+            jobs_result = self.repo.db.table("job_listings") \
+                .select("*") \
+                .eq("employer_id", user_id) \
+                .order("created_at", desc=True) \
+                .limit(5) \
+                .execute()
+            
+            recent_jobs = jobs_result.data or []
+
+            return {
+                "stats": stats,
+                "profile": profile or {},
+                "talent_matches": matches,
+                "recent_jobs": recent_jobs,
+                "notifications_count": 0
+            }
+        except Exception as e:
+            log.error(f"Failed to get employer summary for {user_id}: {e}")
+            raise

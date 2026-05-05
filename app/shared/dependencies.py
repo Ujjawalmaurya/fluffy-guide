@@ -56,6 +56,27 @@ async def get_current_user(
     return result.data
 
 
+def require_user_type(allowed_types: list[str]):
+    """
+    Dependency factory to restrict routes by user type.
+    Example: Depends(require_user_type(["org_ngo"]))
+    """
+    async def dependency(current_user: dict = Depends(get_current_user)):
+        if current_user.get("user_type") not in allowed_types:
+            log.warning(f"Access denied for user {current_user['id']} (type: {current_user.get('user_type')}). Required: {allowed_types}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "success": False,
+                    "error_code": "FORBIDDEN",
+                    "message": f"Access denied. This endpoint is restricted to {allowed_types}.",
+                    "details": {}
+                }
+            )
+        return current_user
+    return dependency
+
+
 async def get_admin(x_admin_secret: str = Header(None)) -> bool:
     """
     Admin-only routes — check X-Admin-Secret header.

@@ -1,7 +1,7 @@
 """
 SkillBridge AI — LLM Configuration
 All model configs hardcoded for local hardware optimization.
-Hardware: GTX 1050 Mobile 6GB VRAM → using sub-3GB models for high speed.
+Hardware: GTX 1050 Mobile 4GB VRAM → using sub-3GB models for high speed.
 """
 import os
 from dataclasses import dataclass

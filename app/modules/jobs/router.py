@@ -10,7 +10,7 @@ from app.modules.jobs.repository import JobsRepository
 from app.schemas.request.job import JobCreateRequest, JobUpdateRequest, JobFilterRequest
 from app.schemas.response.job import JobResponse
 from app.schemas.enums import JobType
-from app.shared.dependencies import get_db, get_admin
+from app.shared.dependencies import get_db, get_admin, get_current_user, require_user_type
 from app.shared.response_models import ok, APIResponse
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -27,17 +27,38 @@ async def list_jobs(
     state: str | None = Query(None),
     category: str | None = Query(None),
     job_type: JobType | None = Query(None),
+    query: str | None = Query(None),
     page: int = Query(1, ge=1),
     limit: int = Query(20, le=100),
     service: JobsService = Depends(_get_service),
 ):
-    f = JobFilterRequest(state=state, category=category, job_type=job_type, page=page, limit=limit)
+    f = JobFilterRequest(state=state, category=category, job_type=job_type, query=query, page=page, limit=limit)
     return ok(data=service.list_jobs(f))
 
 
 @router.get("/{job_id}", response_model=APIResponse[JobResponse])
 async def get_job(job_id: str, service: JobsService = Depends(_get_service)):
     return ok(data=service.get_job(job_id))
+
+
+# ── Employer ──────────────────────────────────────────────────
+
+@router.get("/my-postings", response_model=APIResponse[List[JobResponse]])
+async def list_my_postings(
+    current_user: dict = Depends(require_user_type(["org_employer"])),
+    service: JobsService = Depends(_get_service),
+):
+    return ok(data=service.get_my_postings(current_user["id"]))
+
+
+@router.post("/", response_model=APIResponse[JobResponse])
+async def employer_create_job(
+    body: JobCreateRequest,
+    current_user: dict = Depends(require_user_type(["org_employer"])),
+    service: JobsService = Depends(_get_service),
+):
+    job = await service.create_employer_job(current_user["id"], body)
+    return ok(data=job, message="Job posted successfully.")
 
 
 # ── Admin ──────────────────────────────────────────────────────

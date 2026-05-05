@@ -1,30 +1,115 @@
-# Python
+# ========================
+# Python bytecode
+# ========================
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.pyc
 .Python
-*.egg-info/
-dist/
-build/
 
-# Env
-.env
-.env.local
-
-# Logs
-logs/
-*.log
-
-# Virtual envs
+# ========================
+# Virtual environments
+# ========================
 venv/
 .venv/
 env/
+ENV/
+.env_dir/
 
-# IDE
+# ========================
+# Build / packaging
+# ========================
+*.egg-info/
+*.egg
+dist/
+build/
+sdist/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+MANIFEST
+
+# ========================
+# Environment & secrets
+# ========================
+.env
+.env.local
+.env.*.local
+# Keep the example file
+!.env.example
+
+# ========================
+# Logs
+# ========================
+logs/
+*.log
+
+# ========================
+# Database files
+# ========================
+*.db
+*.sqlite
+*.sqlite3
+
+# ========================
+# Scratch / temp work
+# ========================
+scratch/
+app/scratch/
+
+# ========================
+# Upload / media artifacts
+# ========================
+uploads/
+media/
+tmp/
+temp/
+
+# ========================
+# Testing & coverage
+# ========================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+
+# ========================
+# Type checking / linting
+# ========================
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+
+# ========================
+# Editor / IDE
+# ========================
 .vscode/
+!.vscode/extensions.json
 .idea/
+*.suo
+*.sw?
 
+# ========================
 # OS
+# ========================
 .DS_Store
 Thumbs.db
+Desktop.ini
+
+# ========================
+# Jupyter
+# ========================
+.ipynb_checkpoints/
+*.ipynb
+
+# ========================
+# Distribution / celery
+# ========================
+celerybeat-schedule
+celerybeat.pid

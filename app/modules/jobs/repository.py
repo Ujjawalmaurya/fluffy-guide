@@ -9,7 +9,7 @@ class JobsRepository:
     def __init__(self, db: Client):
         self.db = db
 
-    def list_jobs(self, state: str | None, category: str | None, job_type: str | None, page: int, limit: int) -> list[dict]:
+    def list_jobs(self, state: str | None, category: str | None, job_type: str | None, query_str: str | None, page: int, limit: int) -> list[dict]:
         query = self.db.table("job_listings").select("*").eq("is_active", True)
         if state:
             query = query.eq("location_state", state)
@@ -17,6 +17,18 @@ class JobsRepository:
             query = query.eq("category", category)
         if job_type:
             query = query.eq("job_type", job_type)
+        
+        if query_str:
+            # Use 'or' for multiple column search
+            search_pattern = f"%{query_str}%"
+            query = query.or_(
+                f"title.ilike.{search_pattern},"
+                f"description.ilike.{search_pattern},"
+                f"company.ilike.{search_pattern},"
+                f"location_state.ilike.{search_pattern},"
+                f"location_city.ilike.{search_pattern}"
+            )
+
         offset = (page - 1) * limit
         result = query.range(offset, offset + limit - 1).execute()
         return result.data or []
@@ -45,3 +57,7 @@ class JobsRepository:
         count = len(result.data) if result.data else 0
         log.info(f"Bulk insert: {count} jobs added by admin")
         return count
+
+    def get_my_postings(self, user_id: str) -> list[dict]:
+        result = self.db.table("job_listings").select("*").eq("employer_id", user_id).execute()
+        return result.data or []

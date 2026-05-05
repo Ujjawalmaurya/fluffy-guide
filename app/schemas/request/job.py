@@ -11,18 +11,21 @@ from app.schemas.enums import JobType, WorkMode
 class JobCreateRequest(BaseSchema):
     """Request to create a new job listing."""
     title: str
-    company: str
+    company: Optional[str] = None
     description: Optional[str] = None
-    location_state: str
+    location_state: Optional[str] = Field(None, validation_alias="location")
     location_city: Optional[str] = None
-    job_type: Optional[JobType] = None
+    job_type: Optional[JobType] = Field(None, validation_alias="type")
     work_mode: Optional[WorkMode] = None
-    category: str
+    category: Optional[str] = None
     required_skills: List[str] = []
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
     experience_min: Optional[int] = None
     source_url: Optional[str] = None
+
+    # Extra field to catch raw salary from frontend
+    salary: Optional[str] = None
 
 
 class JobUpdateRequest(BaseSchema):
