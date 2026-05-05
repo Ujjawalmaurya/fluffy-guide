@@ -1,0 +1,2 @@
+class AssessmentException(Exception):
+    pass

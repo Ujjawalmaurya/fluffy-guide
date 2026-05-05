@@ -104,7 +104,7 @@ class GovtAccessLevel(str, Enum):
 
 class StudentOnboardingRequest(BaseSchema):
     full_name: str = Field(..., min_length=2)
-    age: Optional[int] = Field(None, ge=14, le=100)
+    age: Optional[int] = Field(None, ge=10, le=100)
     gender: Optional[str] = None
     state: str = Field(...)
     city: Optional[str] = None

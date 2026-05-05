@@ -1,0 +1,2 @@
+class SchemeException(Exception):
+    pass
