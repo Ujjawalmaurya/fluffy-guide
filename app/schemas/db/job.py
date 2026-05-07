@@ -23,8 +23,8 @@ class JobDocument(BaseSchema):
     scraped_at: datetime = Field(default_factory=datetime.utcnow)
     raw_data: dict = {}
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = BaseSchema.get_config(
+        json_schema_extra={
             "example": {
                 "id": "job_999",
                 "title": "Junior Electrician",
@@ -34,4 +34,4 @@ class JobDocument(BaseSchema):
                 "scraped_at": "2024-01-01T00:00:00Z"
             }
         }
-    }
+    )

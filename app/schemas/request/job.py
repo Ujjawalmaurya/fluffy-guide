@@ -5,7 +5,7 @@ Handles job creation, searching, and matching.
 from typing import Optional, List
 from pydantic import Field
 from app.schemas.base import BaseSchema
-from app.schemas.enums import JobType, WorkMode
+from app.schemas.enums import JobType, WorkMode, Region
 
 
 class JobCreateRequest(BaseSchema):
@@ -13,7 +13,7 @@ class JobCreateRequest(BaseSchema):
     title: str
     company: Optional[str] = None
     description: Optional[str] = None
-    location_state: Optional[str] = Field(None, validation_alias="location")
+    location_state: Optional[Region] = Field(None, validation_alias="location")
     location_city: Optional[str] = None
     job_type: Optional[JobType] = Field(None, validation_alias="type")
     work_mode: Optional[WorkMode] = None
@@ -33,7 +33,7 @@ class JobUpdateRequest(BaseSchema):
     title: Optional[str] = None
     company: Optional[str] = None
     description: Optional[str] = None
-    location_state: Optional[str] = None
+    location_state: Optional[Region] = None
     location_city: Optional[str] = None
     job_type: Optional[JobType] = None
     work_mode: Optional[WorkMode] = None
@@ -48,7 +48,7 @@ class JobUpdateRequest(BaseSchema):
 
 class JobFilterRequest(BaseSchema):
     """Filters for job listing queries."""
-    state: Optional[str] = None
+    state: Optional[Region] = None
     category: Optional[str] = None
     job_type: Optional[JobType] = None
     query: Optional[str] = None
@@ -64,15 +64,15 @@ class JobSearchRequest(BaseSchema):
     work_mode: Optional[WorkMode] = None
     skills: Optional[List[str]] = None
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = BaseSchema.get_config(
+        json_schema_extra={
             "example": {
                 "query": "delivery partner",
                 "location": "bengaluru",
                 "job_type": "gig"
             }
         }
-    }
+    )
 
 
 class JobMatchRequest(BaseSchema):
@@ -80,11 +80,11 @@ class JobMatchRequest(BaseSchema):
     user_id: str
     limit: int = Field(10, ge=1, le=50)
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = BaseSchema.get_config(
+        json_schema_extra={
             "example": {
                 "user_id": "user_123",
                 "limit": 5
             }
         }
-    }
+    )

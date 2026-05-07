@@ -2,26 +2,27 @@
 Profile Request Schemas
 Handles profile updates and information gathering.
 """
-from typing import Optional, List
-from pydantic import Field
+from typing import Optional, List, Any
+from pydantic import Field, field_validator
 from app.schemas.base import BaseSchema
-from app.schemas.enums import EducationLevel, Language
+from app.schemas.enums import EducationLevel, Language, Gender, Region
 
 
 class ProfileUpdateRequest(BaseSchema):
     """Generic profile update request."""
     full_name: Optional[str] = None
     age: Optional[int] = Field(None, ge=14, le=100)
-    gender: Optional[str] = None
-    state: Optional[str] = None
+    gender: Optional[Gender] = None
+    state: Optional[Region] = None
     city: Optional[str] = None
     education_level: Optional[EducationLevel] = None
     languages: Optional[List[Language]] = None
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
 
-    model_config = {
-        "json_schema_extra": {
+
+    model_config = BaseSchema.get_config(
+        json_schema_extra={
             "example": {
                 "full_name": "Raj Kumar",
                 "age": 22,
@@ -29,7 +30,7 @@ class ProfileUpdateRequest(BaseSchema):
                 "state": "Maharashtra"
             }
         }
-    }
+    )
 
 
 class UserSkillsUpdateRequest(BaseSchema):
@@ -37,11 +38,11 @@ class UserSkillsUpdateRequest(BaseSchema):
     skills: List[str]
     interests: List[str]
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = BaseSchema.get_config(
+        json_schema_extra={
             "example": {
                 "skills": ["python", "excel"],
                 "interests": ["data science", "finance"]
             }
         }
-    }
+    )

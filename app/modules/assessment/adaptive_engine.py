@@ -24,33 +24,36 @@ Your instruction for this phase:
 {phase_instruction}
 
 Rules you must follow without exception:
-- Ask EXACTLY one question. Nothing more, nothing less.
-- Keep the question under 25 words.
+- Generate EXACTLY {batch_size} distinct questions.
+- Each question must be under 20 words.
+- Provide 3-8 short, predictable answer chips for each question.
+- Set "allows_multiple" to true if user can reasonably select multiple options.
+- "allows_other" should usually be true.
 - Use {language} language only throughout.
 - Never repeat or revisit a topic already covered.
 - Match vocabulary to education level: {education_level}
 - Do not use technical jargon for blue-collar or informal workers.
-- The question must sound like a real person asking, not a form field.
-- Do not number the question or add any preamble or explanation.
+- Questions must sound like a real person asking, not a form field.
+- Do not number the questions or add any preamble or explanation.
 
 Topics already covered in this conversation: {covered_topics}
 
-Return ONLY this JSON. No other text before or after:
+Return ONLY this JSON structure:
 {{
-  "question": "the question text here",
-  "question_type": "text|mcq|rating",
-  "options": ["option1", "option2", "option3"] or null,
+  "questions": [
+    {{
+      "question": "question text",
+      "question_type": "mcq",
+      "options": ["chip1", "chip2", "chip3", ...],
+      "allows_multiple": true|false,
+      "allows_other": true,
+      "skill_probing": "skill/topic name"
+    }},
+    ...
+  ],
   "phase": {phase_number},
-  "phase_name": "{phase_name}",
-  "skill_probing": "which skill or topic this question targets"
+  "phase_name": "{phase_name}"
 }}
-
-Notes on question_type:
-- Use "mcq" when there are 3-4 clear distinct choices
-- Use "rating" for questions about confidence or frequency
-- Use "text" for open-ended reflective questions
-- For "mcq": provide options array with 3-4 short items
-- For "rating" and "text": options must be null
 """
 
 SKILL_EXTRACTION_PROMPT = """
@@ -117,8 +120,7 @@ def strip_markdown_fences(text: str) -> str:
 def extract_covered_topics(conversation_history: list) -> str:
   """
   Scans assistant messages in conversation history and extracts
-  the skill_probing field from each question JSON.
-  Returns comma-separated string of topics already covered.
+  topics covered in previous batches.
   """
   topics = []
   for msg in conversation_history:
@@ -127,10 +129,11 @@ def extract_covered_topics(conversation_history: list) -> str:
         content = msg.get("content", "")
         if not content:
           continue
-        # Use strip_markdown_fences if needed, but usually content is clean here
         obj = json.loads(content)
-        if isinstance(obj, dict) and obj.get("skill_probing"):
-          topics.append(str(obj["skill_probing"]))
+        if isinstance(obj, dict) and obj.get("questions"):
+          for q in obj["questions"]:
+            if q.get("skill_probing"):
+              topics.append(str(q["skill_probing"]))
       except (json.JSONDecodeError, TypeError, KeyError):
         pass
   return ", ".join(topics) if topics else "none yet"
@@ -138,20 +141,40 @@ def extract_covered_topics(conversation_history: list) -> str:
 def format_qa_pairs(conversation_history: list) -> str:
   """
   Formats conversation history into readable Q&A text for
-  the skill extraction prompt.
+  the skill extraction prompt. Handles batches.
   """
   pairs = []
-  question_text = None
+  last_questions = []
   for msg in conversation_history:
     if msg.get("role") == "assistant":
       try:
         obj = json.loads(msg["content"])
-        question_text = obj.get("question", "")
+        last_questions = [q["question"] for q in obj.get("questions", [])]
       except (json.JSONDecodeError, KeyError):
-        question_text = msg["content"]
-    elif msg.get("role") == "user" and question_text:
-      pairs.append(f"Q: {question_text}\nA: {msg['content']}")
-      question_text = None
+        last_questions = [msg["content"]]
+    elif msg.get("role") == "user" and last_questions:
+      try:
+        # Answers come in two formats:
+        # 1. Dict (new): {"0": ["Python", "SQL"], "1": "3", ...}  — keys are question indices
+        # 2. List (legacy): ["answer1", "answer2", ...]
+        answers_raw = json.loads(msg["content"])
+        if isinstance(answers_raw, dict):
+          # New format: iterate by sorted index key
+          for idx_str in sorted(answers_raw.keys(), key=lambda k: int(k)):
+            idx = int(idx_str)
+            q = last_questions[idx] if idx < len(last_questions) else f"Question {idx + 1}"
+            a = answers_raw[idx_str]
+            a_str = ", ".join(a) if isinstance(a, list) else str(a)
+            pairs.append(f"Q: {q}\nA: {a_str}")
+        elif isinstance(answers_raw, list):
+          for q, a in zip(last_questions, answers_raw):
+            a_str = ", ".join(a) if isinstance(a, list) else str(a)
+            pairs.append(f"Q: {q}\nA: {a_str}")
+        else:
+          pairs.append(f"Q: {last_questions[0]}\nA: {answers_raw}")
+      except (json.JSONDecodeError, TypeError):
+        pairs.append(f"Q: {last_questions[0]}\nA: {msg['content']}")
+      last_questions = []
   return "\n\n".join(pairs) if pairs else "No answers recorded."
 
 # ── Core Functions ────────────────────────────────────────────────
@@ -162,21 +185,16 @@ async def generate_next_question(
   llm_provider
 ) -> dict:
   """
-  Generates the next adaptive question using LLM.
-  Reads the full adaptive_context from the session as conversation
-  history so each question is informed by all previous answers.
-
-  Args:
-    session: current questionnaire_sessions DB record
-    user_profile: combined user + profile data dict
-    llm_provider: OllamaProvider instance
-
-  Returns:
-    Parsed question dict with question, type, options, phase info
+  Generates the next batch of adaptive questions using LLM.
   """
-  next_q_number = session.get("current_question_number", 0) + 1
-  phase_num = get_phase_for_question(next_q_number)
+  current_q_count = session.get("current_question_number", 0)
+  phase_num = get_phase_for_question(current_q_count + 1)
   phase = get_phase_config(phase_num)
+
+  # Calculate batch size based on phase remaining questions
+  max_phase_q = phase.get("max_questions", 4)
+  remaining_in_phase = max_phase_q - (current_q_count % max_phase_q) 
+  batch_size = min(3, remaining_in_phase) if remaining_in_phase > 0 else 3
 
   conversation_history = session.get("adaptive_context", [])
   covered_topics = extract_covered_topics(conversation_history)
@@ -192,63 +210,56 @@ async def generate_next_question(
     language="Hindi" if user_profile.get("preferred_lang") == "hi"
              else "English",
     covered_topics=covered_topics,
-    phase_number=phase_num
+    phase_number=phase_num,
+    batch_size=batch_size
   )
 
   messages = [{"role": "system", "content": system_content}]
-  # Append full conversation history so model has complete context
   messages.extend(conversation_history)
 
   logger.info(
-    f"[ASSESSMENT] Generating Q{next_q_number} for "
-    f"user={user_profile.get('user_id')}. "
-    f"Phase={phase['name']}. "
-    f"History={len(conversation_history)} messages."
+    f"[ASSESSMENT] Generating batch of {batch_size} questions for "
+    f"user={user_profile.get('user_id')}. Phase={phase['name']}."
   )
 
   from app.core.llm_config import LLM_TASKS
-  from app.schemas.internal.llm_outputs import AssessmentQuestionLLMOutput
-  question_raw = await llm_provider.complete_json(
+  from app.schemas.internal.llm_outputs import AssessmentBatchLLMOutput
+  batch_raw = await llm_provider.complete_json(
     messages=messages,
     config=LLM_TASKS["assessment"]
   )
 
   try:
-    if not question_raw:
+    if not batch_raw:
         raise ValueError("Empty response from LLM")
     
-    # Validate and heal if needed
-    # If phase is missing, we inject it BEFORE validation if possible, 
-    # or let the model handle it if we make it optional in the model.
-    # Actually, let's just validate and handle errors.
-    
-    question_model = AssessmentQuestionLLMOutput.model_validate(question_raw)
-    question_obj = question_model.model_dump()
+    batch_model = AssessmentBatchLLMOutput.model_validate(batch_raw)
+    batch_obj = batch_model.model_dump()
     
   except Exception as e:
-    logger.error(f"[ASSESSMENT] Failed to validate question JSON: {e}")
-    # Fallback healing logic (partially kept from original)
-    question_obj = question_raw if question_raw else {}
+    logger.error(f"[ASSESSMENT] Failed to validate batch JSON: {e}")
+    # Fallback healing logic
+    batch_obj = batch_raw if batch_raw else {"questions": []}
     
-    if "phase" not in question_obj:
-      question_obj["phase"] = phase_num
-    if "phase_name" not in question_obj:
-      question_obj["phase_name"] = phase["name"]
-    if "question" not in question_obj or not question_obj["question"]:
-      question_obj["question"] = "Can you tell me more about your experience in this field?"
-      question_obj["question_type"] = "text"
-    if "question_type" not in question_obj:
-      question_obj["question_type"] = "text"
-    if "skill_probing" not in question_obj:
-      question_obj["skill_probing"] = "general experience"
+    if "phase" not in batch_obj:
+      batch_obj["phase"] = phase_num
+    if "phase_name" not in batch_obj:
+      batch_obj["phase_name"] = phase["name"]
+    if not batch_obj.get("questions"):
+      batch_obj["questions"] = [{
+        "question": "Can you tell me more about your daily tasks?",
+        "question_type": "mcq",
+        "options": ["Very manual", "Mostly technical", "Supervisory"],
+        "allows_multiple": False,
+        "allows_other": True,
+        "skill_probing": "general tasks"
+      }]
 
   logger.info(
-    f"[ASSESSMENT] Q{next_q_number} generated. "
-    f"type={question_obj.get('question_type')}. "
-    f"probing={question_obj.get('skill_probing')}"
+    f"[ASSESSMENT] Batch of {len(batch_obj['questions'])} generated."
   )
 
-  return question_obj
+  return batch_obj
 
 
 async def extract_skills_from_session(

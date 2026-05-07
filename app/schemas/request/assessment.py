@@ -16,9 +16,9 @@ class AssessmentStartRequest(BaseSchema):
 
 
 class AssessmentAnswerRequest(BaseSchema):
-    """Request to submit a single assessment answer."""
+    """Request to submit assessment answers. Can be a single string or a list (for batches)."""
     session_id: str = Field(..., description="Active session ID")
-    answer: str = Field(..., min_length=1, description="User answer to current question")
+    answer: Any = Field(..., description="User answer(s)")
 
 
 class AssessmentBulkSubmitRequest(BaseSchema):

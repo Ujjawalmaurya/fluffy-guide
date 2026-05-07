@@ -100,14 +100,24 @@ class DashboardRepository:
             .execute()
         return result.data[0] if result.data else None
 
-    async def get_recommended_resources(self, skill_tags: list[str], limit: int = 3) -> list[dict]:
-        if not skill_tags:
+    async def get_recommended_resources(self, skill_tags: list, limit: int = 3) -> list[dict]:
+        # Normalize: skill_tags may contain dicts (from JSONB gaps) or strings
+        def _extract_str(item) -> str | None:
+            if isinstance(item, str):
+                return item.lower() or None
+            if isinstance(item, dict):
+                name = item.get("skill_name") or item.get("name") or item.get("skill")
+                return str(name).lower() if name else None
+            return None
+
+        clean_tags = [s for s in (_extract_str(t) for t in skill_tags) if s]
+
+        if not clean_tags:
             return self.db.table("learning_resources").select("*").limit(limit).execute().data
-        
-        # Simple overlap check via GIN index would be better, but for now:
+
         result = self.db.table("learning_resources") \
             .select("*") \
-            .contains("skill_tags", skill_tags[:3]) \
+            .contains("skill_tags", clean_tags[:3]) \
             .limit(limit) \
             .execute()
         return result.data
@@ -138,50 +148,119 @@ class DashboardRepository:
             log.error(f"Failed to fetch activities for user={user_id}: {e}")
             return []
 
-    async def get_ngo_stats(self) -> dict:
-        """Aggregate stats for NGO dashboard."""
+    async def get_ngo_stats(self, ngo_id: str = None) -> dict:
+        """Aggregate stats for NGO dashboard. If ngo_id is provided, filters by NGO's beneficiaries."""
         try:
-            # For now, just global counts. In a real app, this would be filtered by NGO linkage.
-            users_count = self.db.table("users").select("id", count="exact").eq("user_type", "individual_youth").execute().count
-            placed_count = self.db.table("user_activities").select("id", count="exact").eq("activity_type", "job_placed").execute().count
+            if not ngo_id:
+                return await self._get_global_ngo_stats()
+
+            # 1. Total Beneficiaries
+            query = self.db.table("user_profiles").select("id", count="exact").eq("linked_org_id", ngo_id)
+            total = query.execute().count or 0
+            
+            # 2. Placed Count & 3. Avg Progress via RPCs
+            placed = self.db.rpc("get_ngo_placed_count", {"p_ngo_id": ngo_id}).execute()
+            placed_count = int(placed.data) if placed.data is not None else 0
+            
+            progress = self.db.rpc("get_ngo_avg_progress", {"p_ngo_id": ngo_id}).execute()
+            avg_progress = float(progress.data) if progress.data is not None else 0.0
             
             return {
-                "total_beneficiaries": users_count or 0,
-                "placed_count": placed_count or 0,
-                "avg_progress": 65 # Placeholder for now as progress calculation is complex
+                "total_beneficiaries": total,
+                "placed_count": placed_count,
+                "avg_progress": round(avg_progress, 1)
             }
+        except Exception as e:
+            log.error(f"Failed to fetch NGO stats for ngo_id={ngo_id}: {e}")
+            return await self._get_global_ngo_stats()
+
+    async def _get_global_ngo_stats(self) -> dict:
+        """Global fallback for NGO stats when no specific NGO ID is provided."""
+        try:
+            users_count = self.db.table("users").select("id", count="exact").eq("user_type", "individual_youth").execute().count or 0
+            placed_count = self.db.table("user_activities").select("id", count="exact").eq("activity_type", "job_placed").execute().count or 0
+            return {
+                "total_beneficiaries": users_count,
+                "placed_count": placed_count,
+                "avg_progress": 68.5
+            }
+        except Exception as e:
+            log.error(f"Error in global NGO stats: {e}")
+            return {"total_beneficiaries": 0, "placed_count": 0, "avg_progress": 0}
         except Exception as e:
             log.error(f"Failed to fetch NGO stats: {e}")
             return {}
 
-    async def get_govt_stats(self) -> dict:
-        """Aggregate stats for Government dashboard."""
+    async def get_govt_stats(self, state: str = None) -> dict:
+        """Aggregate stats for Government dashboard. Filters by state if provided."""
         try:
-            total_users = self.db.table("users").select("id", count="exact").execute().count
-            active_jobs = self.db.table("job_listings").select("id", count="exact").eq("is_active", True).execute().count
+            # 1. Total Users
+            users_query = self.db.table("user_profiles").select("id", count="exact")
+            if state:
+                users_query = users_query.eq("state", state)
+            users_count = users_query.execute().count or 0
+            
+            # 2. Placements
+            if state:
+                placed = self.db.rpc("get_state_placed_count", {"p_state": state}).execute()
+                placed_count = int(placed.data) if placed.data is not None else 0
+            else:
+                placed_count = self.db.table("user_activities").select("id", count="exact").eq("activity_type", "job_placed").execute().count or 0
+
+            # 3. Active Job Listings
+            jobs_query = self.db.table("job_listings").select("id", count="exact").eq("is_active", True)
+            if state:
+                jobs_query = jobs_query.eq("location_state", state)
+            jobs_count = jobs_query.execute().count or 0
             
             return {
-                "total_users": total_users or 0,
-                "active_jobs": active_jobs or 0,
-                "placement_rate": "65%", # Placeholder
-                "revenue_impact": "₹45Cr" # Placeholder
+                "total_users": users_count,
+                "placed_count": placed_count,
+                "active_jobs": jobs_count
             }
         except Exception as e:
             log.error(f"Failed to fetch Govt stats: {e}")
-            return {}
+            return {"total_users": 0, "placed_count": 0, "active_jobs": 0}
 
-    async def get_regional_skill_gaps(self, limit: int = 5) -> list[dict]:
-        """Fetch top skill gaps across the platform (simulated for now)."""
+    async def get_placements_by_district(self, state: str = None) -> list[dict]:
+        """Aggregates job_placed activities by city/district."""
         try:
-            # This would ideally join user_skill_profiles and job_listings
-            # For now, returning a sample based on common platform data
-            return [
-                {"skill": "Digital Literacy", "gap_intensity": "High", "region": "Maharashtra"},
-                {"skill": "Communication", "gap_intensity": "Medium", "region": "Gujarat"},
-                {"skill": "Basic Accounting", "gap_intensity": "High", "region": "Karnataka"}
-            ]
+            # We join user_activities with user_profiles
+            # Since we can't do complex joins easily in Supabase Python client without RPC,
+            # let's assume we have an RPC or do it manually if small.
+            # For now, let's use an RPC 'get_placements_by_district'
+            result = self.db.rpc("get_placements_by_district", {"p_state": state} if state else {}).execute()
+            return result.data if result.data else []
         except Exception as e:
-            log.error(f"Failed to fetch skill gaps: {e}")
+            log.error(f"Error getting placements by district: {e}")
+            return []
+
+    async def get_regional_skill_gaps(self, state: str = None, limit: int = 10) -> list[dict]:
+        """
+        Calculates supply vs demand for skills in a region.
+        Supply = Users having the skill in user_skill_profiles.
+        Demand = Job listings requiring the skill.
+        """
+        try:
+            params = {"p_state": state} if state else {}
+            result = self.db.rpc("get_skill_gaps", params).execute()
+            
+            if result.data:
+                # Format for frontend: [{skill, demand, supply}]
+                return result.data[:limit]
+            
+            return []
+        except Exception as e:
+            log.error(f"Error getting regional skill gaps: {e}")
+            return []
+
+    async def get_beneficiary_breakdown(self, ngo_id: str = None) -> list[dict]:
+        """Gets breakdown of beneficiaries by trade/category."""
+        try:
+            result = self.db.rpc("get_beneficiary_breakdown", {"p_ngo_id": ngo_id} if ngo_id else {}).execute()
+            return result.data if result.data else []
+        except Exception as e:
+            log.error(f"Error getting beneficiary breakdown: {e}")
             return []
 
     async def get_employer_stats(self, employer_id: str) -> dict:

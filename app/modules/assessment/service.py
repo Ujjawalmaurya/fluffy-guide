@@ -105,7 +105,7 @@ async def start_assessment(
 ) -> dict:
     """
     Starts a new assessment or resumes an existing incomplete one.
-    Returns first question + session metadata.
+    Returns the first batch of questions.
     """
     eligibility = await check_retake_eligibility(user_id)
     if not eligibility["eligible"]:
@@ -119,19 +119,19 @@ async def start_assessment(
             eligibility["incomplete_session_id"], user_id
         )
         
-        # Re-generate the question for the current position
-        question = await adaptive_engine.generate_next_question(
+        # Re-generate the batch for the current position
+        batch = await adaptive_engine.generate_next_question(
             session, {**user_profile, "user_id": user_id}, llm_provider
         )
         logger.info(
             f"[ASSESSMENT] Resuming session for user={user_id}. "
-            f"Q={session['current_question_number'] + 1}"
+            f"Current Q Count={session['current_question_number']}"
         )
         return {
             "session_id": session["id"],
-            "question": question,
-            "phase": question.get("phase"),
-            "phase_name": question.get("phase_name"),
+            "batch": batch,
+            "phase": batch.get("phase"),
+            "phase_name": batch.get("phase_name"),
             "question_number": session["current_question_number"] + 1,
             "can_resume": True,
             **eligibility
@@ -151,26 +151,26 @@ async def start_assessment(
         f"attempt={completed_count + 1}/{settings.assessment_max_retakes + 1}"
     )
     
-    question = await adaptive_engine.generate_next_question(
+    batch = await adaptive_engine.generate_next_question(
         session, {**user_profile, "user_id": user_id}, llm_provider
     )
     
-    # Save first question to adaptive_context
+    # Save first batch to adaptive_context
     await repository.update_session(
         session["id"],
         adaptive_context=[{
             "role": "assistant",
-            "content": json.dumps(question)
+            "content": json.dumps(batch)
         }],
-        current_question_number=1,
+        current_question_number=0, # Will increment by batch size after first submission
         last_question_at=_utcnow().isoformat()
     )
     
     return {
         "session_id": session["id"],
-        "question": question,
-        "phase": question.get("phase"),
-        "phase_name": question.get("phase_name"),
+        "batch": batch,
+        "phase": batch.get("phase"),
+        "phase_name": batch.get("phase_name"),
         "question_number": 1,
         "can_resume": False,
         **eligibility
@@ -179,13 +179,13 @@ async def start_assessment(
 
 async def submit_answer(
     session_id: str,
-    answer: str,
+    answer: any,
     user_id: str,
     user_profile: dict,
     llm_provider
 ) -> dict:
     """
-    Accepts user answer, appends to context, generates next question
+    Accepts user answers (batch), appends to context, generates next batch
     OR completes the assessment if max questions reached.
     """
     session = await repository.get_session_by_id(session_id, user_id)
@@ -195,32 +195,33 @@ async def submit_answer(
     if session["is_complete"]:
         raise ASSESSMENT_SESSION_EXPIRED()
         
-    # Check session timeout (2 hours of inactivity)
-    if session.get("last_question_at"):
-        last_activity_str = str(session["last_question_at"])
-        # Support python 3.10 standard iso format parsing 
-        last_activity = datetime.fromisoformat(last_activity_str.replace('Z', '+00:00'))
-        if last_activity.tzinfo is None:
-            last_activity = last_activity.replace(tzinfo=timezone.utc)
-            
-        if _utcnow() - last_activity > timedelta(hours=2):
-            logger.info(
-                f"[ASSESSMENT] Session expired due to inactivity. "
-                f"session={session_id}"
-            )
-            raise ASSESSMENT_SESSION_EXPIRED()
-            
     # Append user answer to conversation context
+    # Frontend sends batch answers as JSON-encoded dict: {"0": [...], "1": "text", ...}
+    answer_str = json.dumps(answer) if not isinstance(answer, str) else answer
+    
     new_context = session.get("adaptive_context", []) + [
-        {"role": "user", "content": answer}
+        {"role": "user", "content": answer_str}
     ]
     
-    new_q_number = session["current_question_number"] + 1
-    is_complete = (new_q_number > settings.assessment_max_questions)
+    # Calculate how many questions were just answered
+    # Answer can be: JSON dict (batch), JSON list, or plain string
+    batch_size = 1
+    try:
+        parsed = json.loads(answer_str) if isinstance(answer_str, str) else answer_str
+        if isinstance(parsed, dict):
+            # Batch format: keys are question indices
+            batch_size = len(parsed)
+        elif isinstance(parsed, list):
+            batch_size = max(1, len(parsed))
+    except (json.JSONDecodeError, TypeError):
+        batch_size = 1
+    
+    new_q_number = session["current_question_number"] + batch_size
+    is_complete = (new_q_number >= settings.assessment_max_questions)
     
     logger.info(
-        f"[ASSESSMENT] Q{session['current_question_number']} answered. "
-        f"user={user_id}. next_q={new_q_number}. "
+        f"[ASSESSMENT] {batch_size} questions answered. "
+        f"user={user_id}. total_q={new_q_number}. "
         f"is_complete={is_complete}"
     )
     
@@ -229,14 +230,14 @@ async def submit_answer(
             session_id, user_id, new_context, user_profile, llm_provider
         )
         
-    # Generate next question
+    # Generate next batch
     updated_session = {
         **session,
         "adaptive_context": new_context,
         "current_question_number": new_q_number
     }
     
-    question = await adaptive_engine.generate_next_question(
+    batch = await adaptive_engine.generate_next_question(
         updated_session,
         {**user_profile, "user_id": user_id},
         llm_provider
@@ -244,23 +245,23 @@ async def submit_answer(
     
     new_context.append({
         "role": "assistant",
-        "content": json.dumps(question)
+        "content": json.dumps(batch)
     })
     
     await repository.update_session(
         session_id,
         adaptive_context=new_context,
         current_question_number=new_q_number,
-        phase=question.get("phase"),
+        phase=batch.get("phase"),
         last_question_at=_utcnow().isoformat()
     )
     
     eligibility = await check_retake_eligibility(user_id)
     return {
         "session_id": session_id,
-        "question": question,
-        "phase": question.get("phase"),
-        "question_number": new_q_number,
+        "batch": batch,
+        "phase": batch.get("phase"),
+        "question_number": new_q_number + 1,
         "is_complete": False,
         "retakes_remaining": eligibility["retakes_remaining"]
     }

@@ -6,7 +6,9 @@ import io
 import json
 from typing import List, Optional
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import Field
+from app.schemas.base import BaseSchema
+from app.schemas.enums import EducationLevel
 
 from app.modules.ai_chat.providers.ollama_provider import OllamaProvider
 from app.shared.exceptions import ResumeNoText, AppError
@@ -15,21 +17,21 @@ from app.core import llm_config
 
 # --- Pydantic Schemas for Strict Parsing ---
 
-class PersonalInfo(BaseModel):
+class PersonalInfo(BaseSchema):
     name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     location: Optional[str] = None
     linkedin: Optional[str] = None
 
-class Education(BaseModel):
+class Education(BaseSchema):
     degree: str
     institution: str
     year_range: Optional[str] = None
-    level: str = Field(description="undergraduate | postgraduate | diploma | phd")
+    level: EducationLevel = Field(default=EducationLevel.GRADUATE)
     coursework: Optional[List[str]] = None
 
-class Experience(BaseModel):
+class Experience(BaseSchema):
     title: str
     company: str
     location: Optional[str] = None
@@ -39,12 +41,12 @@ class Experience(BaseModel):
     responsibilities: List[str]
     technologies: List[str]
 
-class Skill(BaseModel):
+class Skill(BaseSchema):
     name: str
     category: str = Field(description="technical | soft | tool")
     proficiency: str = Field(description="Beginner | Intermediate | Advanced | Expert")
 
-class ResumeData(BaseModel):
+class ResumeData(BaseSchema):
     personal_info: PersonalInfo
     primary_role: str
     total_experience_years: int

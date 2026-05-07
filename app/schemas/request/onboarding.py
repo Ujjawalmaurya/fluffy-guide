@@ -1,112 +1,31 @@
-from enum import Enum
 from typing import Optional, List
 from pydantic import Field
 from app.schemas.base import BaseSchema
-
-class EducationLevel(str, Enum):
-    TEN = "10th"
-    TWELVE = "12th"
-    GRADUATE = "Graduate"
-    POSTGRADUATE = "Postgraduate"
-    DROPOUT = "Dropout"
-
-class Stream(str, Enum):
-    SCIENCE = "Science"
-    COMMERCE = "Commerce"
-    ARTS = "Arts"
-    VOCATIONAL = "Vocational"
-    OTHER = "Other"
-
-class JobLocationPref(str, Enum):
-    SAME_CITY = "Same City"
-    STATE = "State"
-    ANYWHERE = "Anywhere"
-
-class TradeSkill(str, Enum):
-    ELECTRICIAN = "Electrician"
-    PLUMBER = "Plumber"
-    CARPENTER = "Carpenter"
-    WELDER = "Welder"
-    MASON = "Mason"
-    PAINTER = "Painter"
-    MECHANIC = "Mechanic"
-    OTHER = "Other"
-
-class ExperienceRange(str, Enum):
-    ZERO_ONE = "0-1"
-    ONE_THREE = "1-3"
-    THREE_FIVE = "3-5"
-    FIVE_PLUS = "5+"
-
-class WorkRadius(str, Enum):
-    LOCAL = "Local"
-    DISTRICT = "District"
-    STATE = "State"
-    ANYWHERE = "Anywhere"
-
-class InformalWorkType(str, Enum):
-    STREET_VENDOR = "Street Vendor"
-    DOMESTIC_WORKER = "Domestic Worker"
-    DAILY_WAGE = "Daily Wage Labor"
-    HOME_BASED = "Home-based Work"
-    AGRICULTURAL = "Agricultural Work"
-    OTHER = "Other"
-
-class IncomeRange(str, Enum):
-    BELOW_5K = "Below 5k"
-    FROM_5K_10K = "5k-10k"
-    FROM_10K_20K = "10k-20k"
-    ABOVE_20K = "Above 20k"
-
-class DigitalLiteracy(str, Enum):
-    NONE = "None"
-    BASIC = "Basic smartphone use"
-    APPS = "Can use apps"
-    COMFORTABLE = "Comfortable with internet"
-
-class CompanySize(str, Enum):
-    TINY = "1-10"
-    SMALL = "11-50"
-    MEDIUM = "51-200"
-    LARGE = "200+"
-
-class EmployerWorkType(str, Enum):
-    FULL_TIME = "Full-time"
-    PART_TIME = "Part-time"
-    CONTRACT = "Contract"
-    APPRENTICESHIP = "Apprenticeship"
-
-class NGOFocusSector(str, Enum):
-    SKILLING = "Skilling"
-    EMPLOYMENT = "Employment"
-    WOMEN_EMPOWERMENT = "Women Empowerment"
-    YOUTH_DEVELOPMENT = "Youth Development"
-    DIGITAL_LITERACY = "Digital Literacy"
-    OTHER = "Other"
-
-class NGOBeneficiaryType(str, Enum):
-    YOUTH = "Youth"
-    WOMEN = "Women"
-    BLUE_COLLAR = "Blue Collar"
-    INFORMAL = "Informal Workers"
-    ALL = "All"
-
-class GovtDept(str, Enum):
-    LABOUR = "Labour"
-    SKILL_DEVELOPMENT = "Skill Development"
-    EDUCATION = "Education"
-    OTHER = "Other"
-
-class GovtAccessLevel(str, Enum):
-    DISTRICT = "District"
-    STATE = "State"
-    NATIONAL = "National"
+from app.schemas.enums import (
+    EducationLevel,
+    EducationStream as Stream,
+    JobLocationPreference as JobLocationPref,
+    TradeSkill,
+    ExperienceRange,
+    WorkRadius,
+    InformalWorkType,
+    IncomeRange,
+    DigitalLiteracy,
+    CompanySize,
+    JobType as EmployerWorkType,
+    NGOFocusSector,
+    NGOBeneficiaryType,
+    GovtDept,
+    GovtAccessLevel,
+    Gender,
+    Region
+)
 
 class StudentOnboardingRequest(BaseSchema):
     full_name: str = Field(..., min_length=2)
     age: Optional[int] = Field(None, ge=10, le=100)
-    gender: Optional[str] = None
-    state: str = Field(...)
+    gender: Optional[Gender] = None
+    state: Region = Field(...)
     city: Optional[str] = None
     preferred_job_location: JobLocationPref = JobLocationPref.ANYWHERE
     education_level: EducationLevel = Field(...)
@@ -118,8 +37,8 @@ class StudentOnboardingRequest(BaseSchema):
 class BlueCollarOnboardingRequest(BaseSchema):
     full_name: str = Field(..., min_length=2)
     age: Optional[int] = Field(None, ge=18, le=70)
-    gender: Optional[str] = None
-    state: str = Field(...)
+    gender: Optional[Gender] = None
+    state: Region = Field(...)
     city: Optional[str] = None
     village_district: Optional[str] = None
     primary_trade: TradeSkill = Field(...)
@@ -133,8 +52,8 @@ class BlueCollarOnboardingRequest(BaseSchema):
 class InformalWorkerOnboardingRequest(BaseSchema):
     full_name: str = Field(..., min_length=2)
     age: Optional[int] = Field(None, ge=18, le=75)
-    gender: Optional[str] = None
-    state: str = Field(...)
+    gender: Optional[Gender] = None
+    state: Region = Field(...)
     city_village: Optional[str] = None
     current_work_type: InformalWorkType = Field(...)
     monthly_income: Optional[IncomeRange] = None
@@ -149,7 +68,7 @@ class EmployerOnboardingRequest(BaseSchema):
     company_name: str = Field(..., min_length=2)
     industry_sector: str = Field(...)
     company_size: Optional[CompanySize] = None
-    state: str = Field(...)
+    state: Region = Field(...)
     city: str = Field(...)
     roles_hiring_for: List[str] = []
     preferred_skills: List[str] = []
@@ -169,7 +88,7 @@ class GovtOfficerOnboardingRequest(BaseSchema):
     designation: Optional[str] = None
     department: GovtDept = Field(...)
     access_level: GovtAccessLevel = GovtAccessLevel.STATE
-    state_jurisdiction: str = Field(...)
+    state_jurisdiction: Region = Field(...)
     district_jurisdiction: List[str] = []
 
 class UserTypeRequest(BaseSchema):
@@ -178,17 +97,17 @@ class UserTypeRequest(BaseSchema):
 class ProfileRequest(BaseSchema):
     full_name: str
     age: int
-    gender: str
-    state: str
+    gender: Gender
+    state: Region
     city: str
-    education_level: str
+    education_level: EducationLevel
     languages: List[str]
 
 class PreferencesRequest(BaseSchema):
     career_interests: List[str]
     expected_salary_min: Optional[int] = None
     expected_salary_max: Optional[int] = None
-    work_type: str
+    work_type: EmployerWorkType
     willing_to_relocate: bool = False
     target_roles: List[str] = []
 

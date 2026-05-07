@@ -24,8 +24,8 @@ class JobMatchResponse(BaseSchema):
     matches: List[JobMatchDetail]
     count: int
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = BaseSchema.get_config(
+        json_schema_extra={
             "example": {
                 "matches": [
                     {
@@ -40,4 +40,4 @@ class JobMatchResponse(BaseSchema):
                 "count": 1
             }
         }
-    }
+    )

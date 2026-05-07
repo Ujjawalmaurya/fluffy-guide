@@ -3,6 +3,7 @@ Skill Gap Response Schemas
 Analyzed gaps between user and target roles.
 """
 from typing import List
+
 from app.schemas.base import BaseSchema
 
 
@@ -23,8 +24,8 @@ class SkillGapResponse(BaseSchema):
     gaps: List[GapItem]
     priority_order: List[str]
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = BaseSchema.get_config(
+        json_schema_extra={
             "example": {
                 "target_role": "Data Entry Operator",
                 "required_skills": ["Excel", "Typing", "Communication"],
@@ -36,4 +37,4 @@ class SkillGapResponse(BaseSchema):
                 "priority_order": ["Excel", "Typing"]
             }
         }
-    }
+    )

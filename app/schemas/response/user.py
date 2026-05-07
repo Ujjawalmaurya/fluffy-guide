@@ -24,8 +24,8 @@ class UserProfileResponse(BaseSchema):
     onboarding_done: bool
     profile_complete_percentage: int
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = BaseSchema.get_config(
+        json_schema_extra={
             "example": {
                 "id": "user_123",
                 "email": "raj@example.com",
@@ -35,37 +35,50 @@ class UserProfileResponse(BaseSchema):
                 "profile_complete_percentage": 85
             }
         }
-    }
+    )
 
 
 class UserDashboardResponse(BaseSchema):
     """Dashboard summary for the user."""
     profile: UserProfileResponse
+    ai_highlight: Optional[str] = None
+    job_matches: List[dict] = []
+    recommended_courses: List[dict] = []
+    role_specific: Optional[dict] = None
+    show_assessment_nudge: bool = False
+    primary_role: Optional[str] = None
+    experience_years: Optional[int] = None
+    extracted_skills: List[dict] = []
+    quick_assessment_done: bool = False
+    recent_activity: List[dict] = []
+    
     progress_summary: dict = {
         "courses_completed": 0,
         "assessments_taken": 0,
         "skills_verified": 0
     }
-    top_recommendations: List[dict]
     notifications_count: int = 0
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = BaseSchema.get_config(
+        json_schema_extra={
             "example": {
                 "profile": {
                     "id": "user_123",
                     "email": "raj@example.com",
                     "full_name": "Raj Kumar",
-                    "career_stage": "fresher",
+                    "career_stage": "individual_youth",
                     "onboarding_done": True,
                     "profile_complete_percentage": 85,
                     "languages": ["english"]
                 },
+                "ai_highlight": "Focus on Python to unlock 5 new roles.",
+                "job_matches": [],
                 "progress_summary": {
                     "courses_completed": 2,
-                    "assessments_taken": 1
+                    "assessments_taken": 1,
+                    "skills_verified": 3
                 },
-                "top_recommendations": []
+                "notifications_count": 0
             }
         }
-    }
+    )

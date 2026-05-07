@@ -1,7 +1,8 @@
-from typing import List, Optional, Any
-from pydantic import BaseModel, Field
+from typing import List, Optional
+from pydantic import Field
+from app.schemas.base import BaseSchema
 
-class BaseContext(BaseModel):
+class BaseContext(BaseSchema):
     version: str = "1.0"
     user_id: str
     role: str
@@ -41,7 +42,7 @@ class InformalWorkerContext(BaseContext):
     owns_smartphone: bool = True
     interests: List[str] = []
 
-class EmployerContext(BaseModel):
+class EmployerContext(BaseSchema):
     version: str = "1.0"
     role: str = "org_employer"
     contact_name: str
@@ -53,7 +54,7 @@ class EmployerContext(BaseModel):
     hiring_roles: List[str] = []
     required_skills: List[str] = []
 
-class NGOContext(BaseModel):
+class NGOContext(BaseSchema):
     version: str = "1.0"
     role: str = "org_ngo"
     org_name: str
@@ -62,7 +63,7 @@ class NGOContext(BaseModel):
     beneficiary_types: List[str] = []
     contact_person: str
 
-class GovtOfficerContext(BaseModel):
+class GovtOfficerContext(BaseSchema):
     version: str = "1.0"
     role: str = "org_govt"
     full_name: str

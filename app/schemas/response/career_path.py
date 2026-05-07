@@ -20,8 +20,8 @@ class CareerPathResponse(BaseSchema):
     recommended_roles: List[RecommendedRole]
     next_steps: List[str]
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = BaseSchema.get_config(
+        json_schema_extra={
             "example": {
                 "recommended_roles": [
                     {
@@ -33,7 +33,7 @@ class CareerPathResponse(BaseSchema):
                 "next_steps": ["Take a basic electrical safety quiz", "Look for local training centers"]
             }
         }
-    }
+    )
 
 
 class RoadmapStep(BaseSchema):
@@ -55,8 +55,8 @@ class RoadmapResponse(BaseSchema):
     roadmap: List[RoadmapStep]
     motivational_note: str
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = BaseSchema.get_config(
+        json_schema_extra={
             "example": {
                 "total_weeks": 4,
                 "weekly_commitment_hours": 10,
@@ -72,4 +72,4 @@ class RoadmapResponse(BaseSchema):
                 "motivational_note": "You are making great progress!"
             }
         }
-    }
+    )

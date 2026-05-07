@@ -50,14 +50,22 @@ class RoadmapLLMOutput(BaseSchema):
 
 class AssessmentQuestionLLMOutput(BaseSchema):
     """
-    Parsed output for a single assessment question.
+    Parsed output for a single assessment question within a batch.
     """
     question: str
-    question_type: str = "text"
-    options: Optional[List[str]] = None
+    question_type: str = "mcq" # Defaulting to mcq for chips
+    options: List[str] = Field(default_factory=list) # Options are now required for chips
+    allows_multiple: bool = False
+    allows_other: bool = True
+    skill_probing: str
+
+class AssessmentBatchLLMOutput(BaseSchema):
+    """
+    Parsed output for a batch of assessment questions.
+    """
+    questions: List[AssessmentQuestionLLMOutput]
     phase: int
     phase_name: str
-    skill_probing: str
 
 
 class SkillExtractionLLMOutput(BaseSchema):

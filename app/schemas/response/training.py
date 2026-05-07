@@ -24,8 +24,8 @@ class TrainingRecommendationResponse(BaseSchema):
     """List of training recommendations."""
     recommendations: List[TrainingRecommendation]
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = BaseSchema.get_config(
+        json_schema_extra={
             "example": {
                 "recommendations": [
                     {
@@ -39,4 +39,4 @@ class TrainingRecommendationResponse(BaseSchema):
                 ]
             }
         }
-    }
+    )
