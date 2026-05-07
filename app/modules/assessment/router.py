@@ -118,6 +118,7 @@ async def get_status(
     
     return ok(data={
         **eligibility,
+        "can_retake": eligibility["eligible"],
         "has_completed": has_completed
     })
 

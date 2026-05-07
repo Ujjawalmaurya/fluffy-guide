@@ -71,7 +71,8 @@ class ChatService:
         full_response = []
         provider = self._get_provider(language)
         
-        async for token in provider.stream(messages, language):
+        from app.core import llm_config
+        async for token in provider.stream(messages, language, config=llm_config.CAREER_CHAT):
             full_response.append(token)
             yield token
 

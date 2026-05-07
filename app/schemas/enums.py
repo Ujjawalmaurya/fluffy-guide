@@ -51,6 +51,17 @@ class CareerStage(CaseInsensitiveEnum):
     BLUE_COLLAR = "blue_collar"
     INFORMAL = "informal"
 
+    @classmethod
+    def _get_aliases(cls):
+        return {
+            "individualyouth": "student",
+            "individualbluecollar": "blue_collar",
+            "individualinformal": "informal",
+            "orgngo": "senior",
+            "orgemployer": "senior",
+            "orggovt": "senior"
+        }
+
 
 class EducationLevel(CaseInsensitiveEnum):
     NONE = "none"

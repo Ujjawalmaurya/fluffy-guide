@@ -26,19 +26,26 @@ class AssessmentResultResponse(BaseSchema):
 
 
 class QuestionResponse(BaseSchema):
-    """Response containing a single question from LLM."""
+    """Response containing a single question within a batch."""
     question: str
-    question_type: str    # "text" | "mcq" | "rating"
-    options: Optional[List[str]] = None
+    question_type: str = "mcq"
+    options: List[str] = Field(default_factory=list)
+    allows_multiple: bool = False
+    allows_other: bool = True
+    skill_probing: str
+
+
+class AssessmentBatchResponse(BaseSchema):
+    """A batch of questions returned by the adaptive engine."""
+    questions: List[QuestionResponse]
     phase: int
     phase_name: str
-    skill_probing: str
 
 
 class StartAssessmentResponse(BaseSchema):
     """Response after starting/resuming an assessment."""
     session_id: str
-    question: QuestionResponse
+    batch: AssessmentBatchResponse
     phase: int
     phase_name: str
     question_number: int
@@ -46,14 +53,18 @@ class StartAssessmentResponse(BaseSchema):
     retakes_remaining: int
     max_retakes: int
     can_resume: bool
+    is_complete: bool = False
+    eligible: bool = True
+    has_incomplete: bool = False
+    incomplete_session_id: Optional[str] = None
 
 
 class AnswerResponse(BaseSchema):
     """Feedback after submitting an answer."""
     session_id: str
-    question: Optional[QuestionResponse] = None
-    phase: int
-    question_number: int
+    batch: Optional[AssessmentBatchResponse] = None
+    phase: Optional[int] = None
+    question_number: Optional[int] = None
     is_complete: bool
     retakes_remaining: int
     # Populated only when is_complete=True
@@ -70,6 +81,7 @@ class AssessmentStatusResponse(BaseSchema):
     max_retakes: int
     last_completed_at: Optional[datetime] = None
     can_retake: bool
+    eligible: bool # Added for consistency with service response
     next_retake_available_at: Optional[datetime] = None
     has_incomplete: bool
     incomplete_session_id: Optional[str] = None

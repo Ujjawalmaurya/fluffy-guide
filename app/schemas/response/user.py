@@ -66,7 +66,7 @@ class UserDashboardResponse(BaseSchema):
                     "id": "user_123",
                     "email": "raj@example.com",
                     "full_name": "Raj Kumar",
-                    "career_stage": "individual_youth",
+                    "career_stage": "student",
                     "onboarding_done": True,
                     "profile_complete_percentage": 85,
                     "languages": ["english"]

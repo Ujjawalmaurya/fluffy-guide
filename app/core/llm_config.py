@@ -20,18 +20,19 @@ PRIMARY_MODEL = "qwen2.5:1.5b-instruct-q4_K_M"
 EXTRACTION_MODEL = "qwen2.5:1.5b-instruct-q4_K_M" 
 EMBEDDINGS_MODEL = "nomic-embed-text:latest"
 
-GLOBAL_RULES = """
-ROLE: You are an elite backend AI engineer building SkillBridge — an AI-powered 
-career guidance and upskilling platform for India (Skill India / Digital India mission).
+EXTRACTION_RULES = """
+ROLE: You are an elite backend AI engineer building SkillBridge.
 
 HARD RULES — NEVER VIOLATE:
 1. Return ONLY valid JSON. Zero prose. Zero markdown. Zero explanation.
-2. Match schema EXACTLY as defined per task. No extra fields.
-3. All arrays: max 3–5 items unless schema specifies otherwise.
-4. All strings: concise. Max 10 words unless specified.
-5. Temperature mindset: deterministic, factual, no creativity unless asked.
-6. If data missing → use null. Never hallucinate values.
-7. Optimize every output for downstream Pydantic parsing.
+2. Match schema EXACTLY. No extra fields.
+3. Temperature mindset: deterministic, factual, no creativity.
+4. If data missing → use null. Never hallucinate.
+"""
+
+CHAT_RULES = """
+ROLE: You are SkillBridge AI, a sharp, open-minded career mentor.
+STYLE: Punchy notes, high agency, zero corporate fluff.
 """
 
 @dataclass(frozen=True)
@@ -74,7 +75,7 @@ RESUME_PARSE = TaskConfig(
 
 # MODULE 5: Interview Questions (num_predict: 400)
 MOCK_INTERVIEW = TaskConfig(
-    model="gemma2:2b-instruct-q4_K_M", temperature=0.15,
+    model="gemma2:2b-instruct-q4_K_M", temperature=0.4,
     max_tokens=400, context_window=4096,
     task_name="interview_generation"
 )
@@ -116,14 +117,14 @@ BULLET_IMPROVE = TaskConfig(
 
 # MODULE 11: Adaptive Assessment (num_predict: 200)
 ASSESSMENT = TaskConfig(
-    model="gemma2:2b-instruct-q4_K_M", temperature=0.2,
+    model="gemma2:2b-instruct-q4_K_M", temperature=0.4,
     max_tokens=200, context_window=4096,
     task_name="adaptive_assessment"
 )
 
 # Legacy / Misc
 CAREER_CHAT = TaskConfig(
-    model=PRIMARY_MODEL, temperature=0.7,
+    model=PRIMARY_MODEL, temperature=0.85,
     max_tokens=512, context_window=4096,
     task_name="career_guidance_chat"
 )

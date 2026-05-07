@@ -54,17 +54,23 @@ class OllamaProvider(ILLMProvider):
         """Unified parameter preparation ensuring GPU and context settings."""
         model = kwargs.get("model") or (task_config.model if task_config else llm_config.PRIMARY_MODEL)
         
-        # Inject GLOBAL_RULES if not already present
+        # Inject task-appropriate rules if not already present
         local_messages = [m.copy() for m in messages]
         system_found = False
+        
+        # Decide which rules to use
+        is_chat = task_config and task_config.task_name == "career_guidance_chat"
+        rules = llm_config.CHAT_RULES if is_chat else llm_config.EXTRACTION_RULES
+        rule_marker = "STYLE:" if is_chat else "HARD RULES"
+
         for m in local_messages:
             if m["role"] == "system":
-                if "HARD RULES" not in m["content"]:
-                    m["content"] = f"{llm_config.GLOBAL_RULES}\n\n{m['content']}"
+                if rule_marker not in m["content"]:
+                    m["content"] = f"{rules}\n\n{m['content']}"
                 system_found = True
                 break
         if not system_found:
-            local_messages.insert(0, {"role": "system", "content": llm_config.GLOBAL_RULES})
+            local_messages.insert(0, {"role": "system", "content": rules})
 
         # Context and prediction limits
         context_window = kwargs.get("context_window") or (task_config.context_window if task_config else llm_config.OLLAMA_PARAMS["num_ctx"])

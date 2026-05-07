@@ -188,7 +188,7 @@ class DashboardService:
                 "id": user_id,
                 "email": user.get("email", ""),
                 "full_name": profile.get("full_name"),
-                "career_stage": role,
+                "career_stage": profile.get("career_stage") or role,
                 "age": profile.get("age"),
                 "gender": profile.get("gender"),
                 "state": profile.get("state"),
