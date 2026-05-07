@@ -5,6 +5,7 @@ Delegates DB ops to repository.
 """
 from app.modules.onboarding.repository import OnboardingRepository
 from app.modules.onboarding.question_engine import generate_questions
+from app.modules.ai_chat.providers.base import ILLMProvider
 from app.schemas.request.onboarding import (
     UserTypeRequest, ProfileRequest, PreferencesRequest, StudentOnboardingRequest, BlueCollarOnboardingRequest,
     InformalWorkerOnboardingRequest, EmployerOnboardingRequest, NGOOnboardingRequest, GovtOfficerOnboardingRequest,
@@ -22,8 +23,9 @@ VALID_USER_TYPES = {
 
 
 class OnboardingService:
-    def __init__(self, repo: OnboardingRepository):
+    def __init__(self, repo: OnboardingRepository, llm_provider: ILLMProvider):
         self.repo = repo
+        self.llm_provider = llm_provider
 
     def calculate_student_completion(self, data: StudentOnboardingRequest) -> int:
         """
@@ -255,6 +257,7 @@ class OnboardingService:
         state = profile_res.data[0]["state"] if profile_res.data else "India"
 
         questions = await generate_questions(
+            llm_provider=self.llm_provider,
             user_type=user["user_type"],
             state=state,
             career_interests=career_interests,
@@ -262,7 +265,7 @@ class OnboardingService:
         )
 
         session = await self.repo.create_questionnaire_session(user_id, data.language, questions)
-        log.info(f"Generated {len(questions)} questions for {user['user_type']} via SarvamAI")
+        log.info(f"Generated {len(questions)} questions for {user['user_type']} via Ollama")
         return questions
 
     async def submit_answers(self, user_id: str, data: SubmitAnswersRequest) -> str:

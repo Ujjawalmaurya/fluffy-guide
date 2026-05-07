@@ -11,16 +11,16 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_HOST", "http://localhost:11434") + "/v1"
 OLLAMA_API_KEY = "ollama"
 
 # ── Recommended Models (Ranked by Speed/VRAM) ──────────────────
-# 1. qwen2.5:0.5b-instruct-q4_K_M (~400MB) -> Fastest for scoring/gaps
-# 2. phi4-mini:latest (~2.5GB) -> Best for resumes/roadmaps (replaces phi3)
-# 3. gemma2:2b-instruct-q4_K_M (~1.6GB) -> Best for interview/advice
-# 4. qwen2.5:1.5b-instruct-q4_K_M (~1GB) -> All-rounder
+# 1. qwen2.5:1.5b -> skill extraction, onboarding Q gen, assessment Q gen, job ranking (speed tasks)
+# 2. qwen3:4b -> gap analysis, roadmap generation, career chat (reasoning tasks)
 
-PRIMARY_MODEL = "qwen2.5:1.5b-instruct-q4_K_M"
-EXTRACTION_MODEL = "qwen2.5:1.5b-instruct-q4_K_M" 
+PRIMARY_MODEL = "qwen3:4b"
+EXTRACTION_MODEL = "qwen2.5:1.5b" 
 EMBEDDINGS_MODEL = "nomic-embed-text:latest"
 
-EXTRACTION_RULES = """
+CONCISENESS_INSTRUCTION = "Be concise. Maximum 3 sentences per point. No preamble. No repetition."
+
+EXTRACTION_RULES = f"""
 ROLE: You are an elite backend AI engineer building SkillBridge.
 
 HARD RULES — NEVER VIOLATE:
@@ -28,11 +28,15 @@ HARD RULES — NEVER VIOLATE:
 2. Match schema EXACTLY. No extra fields.
 3. Temperature mindset: deterministic, factual, no creativity.
 4. If data missing → use null. Never hallucinate.
+
+{CONCISENESS_INSTRUCTION}
 """
 
-CHAT_RULES = """
+CHAT_RULES = f"""
 ROLE: You are SkillBridge AI, a sharp, open-minded career mentor.
 STYLE: Punchy notes, high agency, zero corporate fluff.
+
+{CONCISENESS_INSTRUCTION}
 """
 
 @dataclass(frozen=True)
@@ -47,86 +51,93 @@ class TaskConfig:
 
 # MODULE 1: Skill Gap Analyzer (num_predict: 150)
 GAP_ANALYSIS = TaskConfig(
-    model="qwen2.5:0.5b-instruct-q4_K_M", temperature=0.1,
+    model="qwen3:4b", temperature=0.1,
     max_tokens=150, context_window=1024,
     task_name="skill_gap_analysis"
 )
 
 # MODULE 2: Career Recommendation Engine (num_predict: 250)
 CAREER_REC = TaskConfig(
-    model="gemma2:2b-instruct-q4_K_M", temperature=0.1,
+    model="qwen3:4b", temperature=0.1,
     max_tokens=250, context_window=1024,
     task_name="career_recommendation"
 )
 
 # MODULE 3: Learning Roadmap (num_predict: 2000)
 ROADMAP = TaskConfig(
-    model="qwen2.5:1.5b-instruct-q4_K_M", temperature=0.1,
+    model="qwen3:4b", temperature=0.1,
     max_tokens=2000, context_window=4096,
     task_name="learning_roadmap"
 )
 
 # MODULE 4: Resume Analyzer (num_predict: 400)
 RESUME_PARSE = TaskConfig(
-    model="qwen2.5:1.5b-instruct-q4_K_M", temperature=0.1,
+    model="qwen2.5:1.5b", temperature=0.1,
     max_tokens=400, context_window=2048,
     task_name="resume_analysis"
 )
 
 # MODULE 5: Interview Questions (num_predict: 400)
 MOCK_INTERVIEW = TaskConfig(
-    model="gemma2:2b-instruct-q4_K_M", temperature=0.4,
+    model="qwen3:4b", temperature=0.4,
     max_tokens=400, context_window=4096,
     task_name="interview_generation"
 )
 
 # MODULE 6: Interview Evaluator (num_predict: 120)
 INTERVIEW_EVAL = TaskConfig(
-    model="qwen2.5:0.5b-instruct-q4_K_M", temperature=0.1,
+    model="qwen2.5:1.5b", temperature=0.1,
     max_tokens=120, context_window=2048,
     task_name="interview_evaluation"
 )
 
 # MODULE 7: Job Match Scorer (num_predict: 150)
 JOB_RANKING = TaskConfig(
-    model="qwen2.5:0.5b-instruct-q4_K_M", temperature=0.1,
+    model="qwen2.5:1.5b", temperature=0.1,
     max_tokens=150, context_window=2048,
     task_name="job_matching"
 )
 
 # MODULE 8: Blue-Collar Guide (num_predict: 200)
 VOCATIONAL_GUIDE = TaskConfig(
-    model="qwen2.5:1.5b-instruct-q4_K_M", temperature=0.1,
+    model="qwen3:4b", temperature=0.1,
     max_tokens=200, context_window=2048,
     task_name="vocational_guidance"
 )
 
 # MODULE 9: Skill Extractor (num_predict: 1000)
 SKILL_EXTRACT = TaskConfig(
-    model="phi4-mini:latest", temperature=0.0,
+    model="qwen2.5:1.5b", temperature=0.0,
     max_tokens=1000, context_window=4096,
     task_name="skill_extraction"
 )
 
 # MODULE 10: Resume Bullet Improver (num_predict: 150)
 BULLET_IMPROVE = TaskConfig(
-    model="qwen2.5:1.5b-instruct-q4_K_M", temperature=0.1,
+    model="qwen2.5:1.5b", temperature=0.1,
     max_tokens=150, context_window=1024,
     task_name="bullet_improvement"
 )
 
 # MODULE 11: Adaptive Assessment (num_predict: 200)
 ASSESSMENT = TaskConfig(
-    model="gemma2:2b-instruct-q4_K_M", temperature=0.4,
+    model="qwen2.5:1.5b", temperature=0.4,
     max_tokens=200, context_window=4096,
     task_name="adaptive_assessment"
 )
 
 # Legacy / Misc
 CAREER_CHAT = TaskConfig(
-    model=PRIMARY_MODEL, temperature=0.85,
+    model="qwen3:4b", temperature=0.85,
     max_tokens=512, context_window=4096,
     task_name="career_guidance_chat"
+)
+
+# MODULE 12: Onboarding Question Generator (num_predict: 800)
+ONBOARDING_Q_GEN = TaskConfig(
+    model="qwen2.5:1.5b", temperature=0.7,
+    max_tokens=800, context_window=2048,
+    task_name="onboarding_question_generation"
 )
 
 # ── Task Registry ─────────────────────────────────────────────
@@ -143,12 +154,13 @@ LLM_TASKS = {
     "bullet_improve": BULLET_IMPROVE,
     "skill_extract": SKILL_EXTRACT,
     "assessment": ASSESSMENT,
-    "assessment_extraction": SKILL_EXTRACT
+    "assessment_extraction": SKILL_EXTRACT,
+    "onboarding": ONBOARDING_Q_GEN
 }
 
 # ── Runtime Config ────────────────────────────────────────────
 OLLAMA_PARAMS = {
-    "num_ctx": 2048,
+    "num_ctx": 4096,  # Increased for qwen3:4b
     "num_predict": 256,
     "temperature": 0.1,
     "top_p": 0.9,
@@ -160,3 +172,4 @@ OLLAMA_PARAMS = {
 MAX_RETRIES = 2
 RETRY_DELAY = 1.0
 HEALTH_MODEL = PRIMARY_MODEL
+

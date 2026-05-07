@@ -1,30 +1,37 @@
 import json
 from loguru import logger
-from app.modules.ai_chat.providers.ollama_provider import OllamaProvider
+from app.modules.ai_chat.providers.base import ILLMProvider
 from app.core import llm_config
 from app.modules.dashboard.repository import DashboardRepository
 from app.modules.skill_profile.repository import SkillProfileRepository
 
-RANKING_PROMPT = """
-You are a career matching AI. Rank these jobs for the user.
+RANKING_SYSTEM_PROMPT = f"""ROLE: You are an elite career matching AI for SkillBridge.
 
-User:
+TASK: Rank provided job listings based on the user's profile.
+JSON ONLY. No prose. No explanation.
+
+RULES:
+- Return a JSON array of objects.
+- Each object must have: "id", "match_score" (0-100), and "reason" (max 10 words).
+- match_score should be based on skill overlap, experience, and location.
+
+{llm_config.CONCISENESS_INSTRUCTION}
+"""
+
+RANKING_USER_PROMPT = """USER PROFILE:
 - Role: {primary_role}
 - Exp: {total_experience_years}y
 - Skills: {skills}
 - Interests: {interests}
 - Loc: {location}
 
-Jobs:
+JOB LISTINGS:
 {jobs_json}
 
-Task: Return a JSON array of objects with "id", "match_score" (0-100), and "reason" (max 10 words). 
-Format: [{{"id": "...", "match_score": 85, "reason": "..."}}]
-Rule: NO reasoning tags. NO conversational text. Raw JSON only.
-"""
+Return rankings now."""
 
 class JobRecommendationEngine:
-    def __init__(self, db, llm_provider: OllamaProvider):
+    def __init__(self, db, llm_provider: ILLMProvider):
         self.dash_repo = DashboardRepository(db)
         self.skill_repo = SkillProfileRepository(db)
         self.llm_provider = llm_provider
@@ -87,7 +94,7 @@ class JobRecommendationEngine:
                 for j in candidates
             ]
 
-            formatted_prompt = RANKING_PROMPT.format(
+            user_prompt = RANKING_USER_PROMPT.format(
                 primary_role=user_context["primary_role"],
                 total_experience_years=user_context["total_experience_years"],
                 skills=", ".join(user_context["skills"]),
@@ -100,7 +107,10 @@ class JobRecommendationEngine:
                 # Use specific job ranking config
                 logger.info(f"[JOB_ENGINE] Ranking {len(jobs_to_rank)} jobs for user={user_id}")
                 ranked_data = await self.llm_provider.complete_json(
-                    messages=[{"role": "user", "content": formatted_prompt}],
+                    messages=[
+                        {"role": "system", "content": RANKING_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_prompt}
+                    ],
                     config=llm_config.JOB_RANKING
                 )
                 

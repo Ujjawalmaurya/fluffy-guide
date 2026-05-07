@@ -1,8 +1,9 @@
 from app.modules.dashboard.repository import DashboardRepository
-from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
+from app.modules.ai_chat.providers.base import ILLMProvider
 from app.modules.ai_chat.context_builder import build_context_json
 from app.modules.jobs.recommendation_engine import JobRecommendationEngine
 from app.core.logger import get_logger
+from app.core.llm_config import LLM_TASKS
 import asyncio
 import json
 import time
@@ -12,11 +13,20 @@ log = get_logger("DASHBOARD")
 # Fields that count toward profile completion
 PROFILE_FIELDS = ["full_name", "age", "gender", "state", "city", "education_level", "languages", "phone"]
 
+INSIGHT_SYSTEM_PROMPT = """ROLE: You are SkillBridge AI. You give brief, high-impact career tips for India's workforce.
+TASK: Generate ONE punchy, motivational insight (max 12 words) for a {role}.
+Goal: Suggest a next step based on their skills/gaps.
+
+RULES:
+- Output ONLY the tip.
+- NO reasoning tags. NO conversational filler.
+- Be direct and encouraging.
+"""
 
 class DashboardService:
-    def __init__(self, repo: DashboardRepository):
+    def __init__(self, repo: DashboardRepository, ai_provider: ILLMProvider):
         self.repo = repo
-        self.ai_provider = get_ollama_instance()
+        self.ai_provider = ai_provider
         self.rec_engine = JobRecommendationEngine(repo.db, self.ai_provider)
         self._insight_cache = {} # {user_id: (timestamp, content)}
         self._job_cache = {} # {user_id: (timestamp, list)}
@@ -57,11 +67,7 @@ class DashboardService:
         # Check if assessment is done
         assessment_done = user.get("quick_assessment_done", False)
         onboarding_done = user.get("onboarding_done", False)
-        nudge_shown = user.get("assessment_nudge_shown", False)
 
-        # Assessment nudge logic:
-        # Show nudge if onboarding is done, assessment is NOT done, and nudge hasn't been shown before
-        show_nudge = onboarding_done and not assessment_done and not nudge_shown
 
         # Fetch gap analysis report status
         gap_row = self.repo.db.table("gap_analysis_reports").select(
@@ -203,7 +209,6 @@ class DashboardService:
             "job_matches": job_matches,
             "recommended_courses": recommended_courses,
             "role_specific": role_specific,
-            "show_assessment_nudge": show_nudge,
             "primary_role": primary_role,
             "experience_years": experience_years,
             "extracted_skills": extracted_skills,
@@ -243,19 +248,12 @@ class DashboardService:
             }
             context_json = json.dumps(full_data)
             role = user.get("user_type", "individual_youth")
-            
-            prompt = f"""
-            Based on this user context: {context_json}
-            
-            Role: {role}
-            Action: Generate ONE punchy, motivational insight (max 12 words).
-            Goal: Suggest a next step based on their skills/gaps.
-            Constraint: NO reasoning tags. NO conversational filler. Language: {user.get('preferred_lang', 'en')}
-            """
+            system_prompt = INSIGHT_SYSTEM_PROMPT.format(role=role)
+            user_prompt = f"USER CONTEXT: {context_json}\n\nGenerate tip now in {user.get('preferred_lang', 'en')}."
             
             messages = [
-                {"role": "system", "content": "You are SkillBridge AI. You give brief, high-impact career tips. Output ONLY the tip."}, 
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": system_prompt}, 
+                {"role": "user", "content": user_prompt}
             ]
             
             # Use a slightly lower max_tokens and context_window for speed
@@ -276,16 +274,6 @@ class DashboardService:
             log.error(f"Failed to generate AI insight: {e}")
             return "Keep growing your skills to unlock new opportunities!"
 
-    def mark_nudge_shown(self, user_id: str):
-        """Mark that the assessment nudge has been shown to the user once."""
-        try:
-            self.repo.db.table("users").update({
-                "assessment_nudge_shown": True
-            }).eq("id", user_id).execute()
-            log.info(f"Marked assessment_nudge_shown=True for user={user_id}")
-        except Exception as e:
-            log.error(f"Failed to mark nudge shown for user={user_id}: {e}")
-            raise
 
     # ── NGO Dashboard Implementation ─────────────────────────────
 

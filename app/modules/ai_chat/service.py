@@ -11,12 +11,9 @@ log = get_logger("AI_CHAT")
 
 
 class ChatService:
-    def __init__(self, repo: ChatRepository):
+    def __init__(self, repo: ChatRepository, provider: ILLMProvider):
         self.repo = repo
-        self.provider = get_ollama_instance()
-
-    def _get_provider(self, language: str) -> ILLMProvider:
-        return self.provider
+        self.provider = provider
 
     async def _build_system_prompt(self, user_id: str, language: str) -> str:
         # Fetch fresh data from DB
@@ -69,10 +66,9 @@ class ChatService:
 
         # Stream + collect response
         full_response = []
-        provider = self._get_provider(language)
         
         from app.core import llm_config
-        async for token in provider.stream(messages, language, config=llm_config.CAREER_CHAT):
+        async for token in self.provider.stream(messages, language, config=llm_config.CAREER_CHAT):
             full_response.append(token)
             yield token
 

@@ -10,7 +10,7 @@ from pydantic import Field
 from app.schemas.base import BaseSchema
 from app.schemas.enums import EducationLevel
 
-from app.modules.ai_chat.providers.ollama_provider import OllamaProvider
+from app.modules.ai_chat.providers.base import ILLMProvider
 from app.shared.exceptions import ResumeNoText, AppError
 from services.pdf_extractor import extract_resume_text
 from app.core import llm_config
@@ -60,26 +60,34 @@ class ResumeData(BaseSchema):
     skill_gap_analysis: str
 
 # Optimized prompt following HARD RULES
-RESUME_EXTRACTION_PROMPT = """Extract career data from resume. JSON ONLY.
-Schema:
-- personal_info: {name, email, phone, location, linkedin}
+RESUME_SYSTEM_PROMPT = f"""ROLE: You are an elite AI engineer at SkillBridge.
+TASK: Extract structured career data from the provided resume text.
+JSON ONLY. No prose. No markdown. No explanation.
+
+SCHEMA RULES:
+- personal_info: {{name, email, phone, location, linkedin}}
 - primary_role: job title (max 3 words)
 - total_experience_years: int
-- education: [{degree, institution, year_range, level, coursework}]
-- experience: [{title, company, location, start_date, end_date, is_current, responsibilities, technologies}]
-- skills: [{name, category, proficiency}]
+- education: [{{degree, institution, year_range, level, coursework}}]
+- experience: [{{title, company, location, start_date, end_date, is_current, responsibilities, technologies}}]
+- skills: [{{name, category, proficiency}}]
 - summary: professional summary (max 20 words)
 - strengths: [string] (max 3)
 - weaknesses: [string] (max 3)
 - career_suggestions: [string] (max 3)
 - skill_gap_analysis: missing skill (max 10 words)
 
-Resume:
-{resume_text}"""
+{llm_config.CONCISENESS_INSTRUCTION}
+"""
+
+RESUME_USER_PROMPT = """RESUME TEXT:
+{resume_text}
+
+Generate JSON now."""
 
 
 async def parse_resume(file_bytes: bytes, filename: str, content_type: str, user_id: str,
-                       llm_provider: OllamaProvider) -> dict:
+                       llm_provider: ILLMProvider) -> dict:
     
     logger.info(f"[RESUME_PARSER] Processing user={user_id} file={filename}")
     text = ""
@@ -105,12 +113,15 @@ async def parse_resume(file_bytes: bytes, filename: str, content_type: str, user
     if len(text) > 3000:
         text = text[:3000]
         
-    formatted_prompt = RESUME_EXTRACTION_PROMPT.format(resume_text=text)
+    user_prompt = RESUME_USER_PROMPT.format(resume_text=text)
     
     try:
         logger.info(f"[RESUME_PARSER] Prompting LLM for extraction...")
         parsed_dict = await llm_provider.complete_json(
-            messages=[{"role": "user", "content": formatted_prompt}],
+            messages=[
+                {"role": "system", "content": RESUME_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ],
             config=llm_config.RESUME_PARSE
         )
         

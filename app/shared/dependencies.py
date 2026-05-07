@@ -89,3 +89,12 @@ async def get_admin(x_admin_secret: str = Header(None)) -> bool:
             detail={"success": False, "error_code": "ADMIN_UNAUTHORIZED", "message": "Invalid admin secret.", "details": {}}
         )
     return True
+
+
+from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
+from app.modules.ai_chat.providers.base import ILLMProvider
+
+
+def get_llm_provider() -> ILLMProvider:
+    """Returns the standardized LLM provider instance."""
+    return get_ollama_instance()

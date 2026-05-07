@@ -7,49 +7,55 @@ from app.core.logger import get_logger
 
 logger = get_logger("GAP_ANALYSIS")
 
-ROADMAP_PROMPT = """
-You are a career development expert for India's workforce.
-Build a practical week-by-week learning roadmap.
-Return ONLY valid JSON. No markdown. No preamble. No explanation.
+from app.core.llm_config import CONCISENESS_INSTRUCTION
 
-User profile:
+ROADMAP_SYSTEM_PROMPT = f"""ROLE: You are an elite career development expert for India's workforce, specializing in SkillBridge AI.
+
+TASK: Build a practical week-by-week learning roadmap.
+JSON ONLY. No prose. No markdown. No explanation.
+
+RULES:
+- Plan 8 to 12 weeks total.
+- Max 2-3 hours per day commitment.
+- Blue-collar workers: prefer vocational, hands-on resources.
+- Youth: include one soft skill week alongside technical weeks.
+- Each week focuses on ONE skill only.
+- Milestones must be concrete and personally verifiable.
+- motivational_note must be specific to this person, not generic.
+- USE ONLY the provided resources. Never invent URLs or IDs.
+
+{CONCISENESS_INSTRUCTION}
+"""
+
+ROADMAP_USER_PROMPT = """USER PROFILE:
 - Name: {name}
-- User type: {user_type}
+- Type: {user_type}
 - State: {state}
-- Career interests: {interests}
+- Interests: {interests}
 
-Top skill gaps to address (in priority order):
+TOP SKILL GAPS:
 {top_gaps}
 
-Available learning resources (USE ONLY THESE — never invent):
+AVAILABLE RESOURCES:
 {resources_json}
 
-Rules:
-- Plan 8 to 12 weeks total
-- Max 2-3 hours per day commitment
-- Blue-collar workers: prefer vocational, hands-on resources
-- Youth: include one soft skill week alongside technical weeks
-- Each week focuses on ONE skill only
-- Milestones must be concrete and personally verifiable
-- motivational_note must be specific to this person, not generic
-
-Return ONLY this JSON:
+Return ONLY this JSON structure:
 {{
   "total_weeks": 10,
   "weekly_commitment_hours": 2,
   "roadmap": [
     {{
       "week": 1,
-      "focus_skill": "skill name",
-      "goal": "what they can do by end of this week",
-      "action": "specific daily action in plain simple language",
-      "resource_id": "uuid from provided resources or null",
-      "resource_name": "name from provided list or null",
-      "resource_url": "url from provided list or null",
-      "milestone": "I will know I succeeded when I can..."
+      "focus_skill": "...",
+      "goal": "...",
+      "action": "...",
+      "resource_id": "...",
+      "resource_name": "...",
+      "resource_url": "...",
+      "milestone": "..."
     }}
   ],
-  "motivational_note": "one specific encouraging sentence"
+  "motivational_note": "..."
 }}
 """
 
@@ -97,7 +103,7 @@ async def build_roadmap(
             f"user={user_id}. Roadmap will have no resource links."
         )
 
-    prompt = ROADMAP_PROMPT.format(
+    user_prompt = ROADMAP_USER_PROMPT.format(
         name=user_profile_data.get("full_name", "there"),
         user_type=user_profile_data.get("user_type", "individual"),
         state=user_profile_data.get("state", "India"),
@@ -114,7 +120,10 @@ async def build_roadmap(
     from app.schemas.internal.llm_outputs import RoadmapLLMOutput
 
     roadmap_raw = await llm_provider.complete_json(
-        messages=[{"role": "user", "content": prompt}],
+        messages=[
+            {"role": "system", "content": ROADMAP_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt}
+        ],
         config=LLM_TASKS["roadmap"]
     )
 

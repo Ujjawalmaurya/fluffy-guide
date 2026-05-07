@@ -258,10 +258,8 @@ ALTER TABLE questionnaire_sessions
 
 -- Modify users table (add assessment tracking)
 ALTER TABLE users
-  ADD COLUMN IF NOT EXISTS quick_assessment_done BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS quick_assessment_done BOOLEAN DEFAULT false;
   -- True after first quick_assessment session completed
-  ADD COLUMN IF NOT EXISTS assessment_nudge_shown BOOLEAN DEFAULT false;
-  -- True after the first time the nudge is shown to user
 
 -- Modify profile_enrichments (add Gemini extraction columns)
 ALTER TABLE profile_enrichments
