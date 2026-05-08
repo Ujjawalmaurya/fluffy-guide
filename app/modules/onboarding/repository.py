@@ -12,6 +12,38 @@ class OnboardingRepository:
     def __init__(self, db: Client):
         self.db = db
 
+    PROFILE_COLUMNS = {
+        "full_name", "age", "gender", "state", "city", 
+        "education_level", "languages", "phone", "avatar_url", 
+        "career_identity", "stream", "institution_name", "primary_trade",
+        "secondary_skills", "years_experience", "is_currently_employed",
+        "preferred_work_radius", "owns_smartphone", "current_work_type",
+        "monthly_income", "digital_literacy", "interests", "designation",
+        "company_name", "industry_sector", "company_size", "roles_hiring_for",
+        "preferred_skills", "work_type_offered", "registration_number",
+        "focus_sectors", "coverage_areas", "beneficiary_types",
+        "department", "access_level", "state_jurisdiction", "district_jurisdiction",
+        "preferred_job_location", "village_district", "city_village",
+        "contact_person_name", "contact_designation"
+    }
+
+    PREFERENCE_COLUMNS = {
+        "career_interests", "expected_salary_min", "expected_salary_max", 
+        "work_type", "willing_to_relocate", "target_roles"
+    }
+
+    FIELD_MAPPINGS = {
+        "languages_known": "languages",
+        "org_name": "company_name",
+        "contact_name": "full_name",
+        "contact_person_name": "full_name",
+        "college_name": "institution_name",
+        "reg_number": "registration_number",
+        "industry": "industry_sector",
+        "hiring_roles": "roles_hiring_for",
+        "candidate_skills": "preferred_skills"
+    }
+
     # ── Onboarding State ──────────────────────────────────────
 
     async def get_state(self, user_id: str) -> dict | None:
@@ -36,68 +68,40 @@ class OnboardingRepository:
         return result.data
 
     async def save_user_profile(self, user_id: str, profile_data: dict):
-        """Update user_profiles with filtered data."""
-        profile_cols = {
-            "full_name", "age", "gender", "state", "city", 
-            "education_level", "languages", "phone", "avatar_url", 
-            "career_identity", "stream", "institution_name", "primary_trade",
-            "secondary_skills", "years_experience", "is_currently_employed",
-            "preferred_work_radius", "owns_smartphone", "current_work_type",
-            "monthly_income", "digital_literacy", "interests", "designation",
-            "company_name", "industry_sector", "company_size", "roles_hiring_for",
-            "preferred_skills", "work_type_offered", "registration_number",
-            "focus_sectors", "coverage_areas", "beneficiary_types",
-            "department", "access_level", "state_jurisdiction", "district_jurisdiction",
-            "preferred_job_location", "village_district", "city_village",
-            "contact_person_name", "contact_designation"
-        }
+        """Update user_profiles and user_preferences with filtered and mapped data."""
+        data = profile_data.copy()
         
-        # Map languages_known if present
-        if "languages_known" in profile_data:
-            profile_data["languages"] = profile_data.pop("languages_known")
+        # Apply mappings
+        for source, target in self.FIELD_MAPPINGS.items():
+            if source in data:
+                if not data.get(target):
+                    data[target] = data.get(source)
+                data.pop(source, None)
 
-        # Map NGO fields
-        if "org_name" in profile_data:
-            profile_data["company_name"] = profile_data.pop("org_name")
-        if "contact_name" in profile_data:
-            profile_data["full_name"] = profile_data.pop("contact_name")
-            
-        # Map Employer fields
-        if "contact_person_name" in profile_data and not profile_data.get("full_name"):
-            profile_data["full_name"] = profile_data.get("contact_person_name")
+        # Mapping preferred_job_location to work_type for backwards compatibility
+        if "preferred_job_location" in data and not data.get("work_type"):
+            data["work_type"] = data["preferred_job_location"]
 
-        filtered_data = {k: v for k, v in profile_data.items() if k in profile_cols}
-        return self.db.table("user_profiles").upsert(
-            {"user_id": user_id, **filtered_data}, on_conflict="user_id"
+        filtered_profile = {k: v for k, v in data.items() if k in self.PROFILE_COLUMNS and v is not None}
+        filtered_prefs = {k: v for k, v in data.items() if k in self.PREFERENCE_COLUMNS and v is not None}
+        
+        # Upsert Profile
+        res = self.db.table("user_profiles").upsert(
+            {"user_id": user_id, **filtered_profile}, on_conflict="user_id"
         ).execute()
 
-    async def save_blue_collar_profile(self, user_id: str, profile_data: dict):
-        return await self.save_user_profile(user_id, profile_data)
+        # Upsert Preferences if data exists
+        if filtered_prefs:
+            self.db.table("user_preferences").upsert(
+                {"user_id": user_id, **filtered_prefs}, on_conflict="user_id"
+            ).execute()
 
-    async def save_informal_worker_profile(self, user_id: str, profile_data: dict):
-        # The table 'informal_worker_profiles' does not exist in schema, redirecting to user_profiles
-        return await self.save_user_profile(user_id, profile_data)
-
-    async def save_employer_profile(self, user_id: str, profile_data: dict):
-        # The table 'employer_profiles' does not exist in schema, redirecting to user_profiles
-        return await self.save_user_profile(user_id, profile_data)
-
-    async def save_ngo_profile(self, user_id: str, profile_data: dict):
-        return await self.save_user_profile(user_id, profile_data)
-
-    async def save_govt_profile(self, user_id: str, profile_data: dict):
-        return await self.save_user_profile(user_id, profile_data)
+        return res
 
     async def update_user_onboarding_status(self, user_id: str, update_data: dict):
         return self.db.table("users").update(update_data).eq("id", user_id).execute()
 
     # ── Step 3: Preferences ───────────────────────────────────
-
-    async def upsert_profile(self, user_id: str, data: dict):
-        return self.db.table("user_profiles").upsert({"user_id": user_id, **data}, on_conflict="user_id").execute()
-
-    async def upsert_preferences(self, user_id: str, data: dict):
-        return self.db.table("user_preferences").upsert({"user_id": user_id, **data}, on_conflict="user_id").execute()
 
     async def get_preferences(self, user_id: str) -> dict | None:
         result = self.db.table("user_preferences").select("*").eq("user_id", user_id).execute()
@@ -144,42 +148,19 @@ class OnboardingRepository:
             "onboarding_done": True
         }).eq("id", user_id).execute()
         
-        # Update onboarding_state table if it exists for this user
+        # Update onboarding_state table
         return self.db.table("onboarding_state").upsert({
             "user_id": user_id,
-            "current_step": 5, # Representing completion
+            "current_step": 5,
             "completed_steps": [1, 2, 3, 4]
         }, on_conflict="user_id").execute()
 
     async def update_user_onboarding(self, user_id: str, step: int, percentage: int):
-        # onboarding_step and profile_complete_percentage don't exist in 'users' table.
-        # We use onboarding_state table instead.
         return self.db.table("onboarding_state").upsert({
             "user_id": user_id,
             "current_step": step,
+            "completed_steps": list(range(1, step))
         }, on_conflict="user_id").execute()
-
-    async def save_student_profile(self, user_id: str, profile_data: dict):
-        """Update user_profiles and user_preferences with student data."""
-        # 1. Save Profile Data
-        await self.save_user_profile(user_id, profile_data)
-
-        # 2. Save Preference Data
-        pref_cols = {
-            "career_interests", "expected_salary_min", "expected_salary_max", 
-            "work_type", "willing_to_relocate", "target_roles"
-        }
-        
-        # Map preferred_job_location to work_type if present
-        if "preferred_job_location" in profile_data:
-            profile_data["work_type"] = profile_data.pop("preferred_job_location")
-
-        filtered_prefs = {k: v for k, v in profile_data.items() if k in pref_cols}
-        if filtered_prefs:
-            return self.db.table("user_preferences").upsert({
-                "user_id": user_id,
-                **filtered_prefs
-            }, on_conflict="user_id").execute()
 
     def get_jobs_for_state(self, state: str, limit: int = 10) -> list[dict]:
         result = self.db.table("job_listings") \
@@ -189,12 +170,3 @@ class OnboardingRepository:
             .limit(limit) \
             .execute()
         return result.data or []
-
-    async def save_employer_profile(self, user_id: str, profile_data: dict):
-        return await self.save_user_profile(user_id, profile_data)
-
-    async def save_ngo_profile(self, user_id: str, profile_data: dict):
-        return await self.save_user_profile(user_id, profile_data)
-
-    async def save_govt_profile(self, user_id: str, profile_data: dict):
-        return await self.save_user_profile(user_id, profile_data)

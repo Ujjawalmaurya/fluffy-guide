@@ -36,8 +36,8 @@ async def student_onboarding(
     service: OnboardingService = Depends(_get_service),
 ):
     """Multi-step student onboarding endpoint."""
-    await service.save_student_onboarding(current_user["id"], body, step)
-    return ok(message=f"Step {step} saved successfully.")
+    result = await service.save_student_onboarding(current_user["id"], body, step)
+    return ok(data=result, message=f"Step {step} saved successfully.")
 
 
 @router.post("/blue-collar", response_model=APIResponse)
@@ -49,8 +49,8 @@ async def blue_collar_onboarding(
     service: OnboardingService = Depends(_get_service),
 ):
     """Multi-step blue collar worker onboarding endpoint."""
-    await service.save_blue_collar_onboarding(current_user["id"], body, step)
-    return ok(message=f"Step {step} saved successfully.")
+    result = await service.save_blue_collar_onboarding(current_user["id"], body, step)
+    return ok(data=result, message=f"Step {step} saved successfully.")
 
 
 @router.post("/user-type", response_model=APIResponse)

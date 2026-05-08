@@ -1,25 +1,29 @@
+import json
 from app.modules.ai_chat.providers.base import ILLMProvider
 from app.modules.assessment.phase_config import (
-  get_phase_for_question, get_phase_config
+  get_phase_for_question, get_phase_config, PHASE_QUESTION_RANGES
 )
 from app.core.logger import get_logger
 from app.core.llm_config import LLM_TASKS, CONCISENESS_INSTRUCTION
+from app.core.config import settings
 from app.schemas.internal.llm_outputs import AssessmentBatchLLMOutput, SkillExtractionLLMOutput
 
 logger = get_logger("ASSESSMENT")
 
 # ── Prompt Templates ─────────────────────────────────────────────
 
-QUESTION_SYSTEM_PROMPT = """ROLE: You are a skilled career counsellor for SkillBridge AI. 
+QUESTION_SYSTEM_PROMPT = """ROLE: You are SkillBridge AI, a sharp, empathetic career mentor.
 Speaking with a {user_type} from {state}, education: {education_level}.
 
-TASK: Generate EXACTLY {batch_size} distinct career assessment questions.
+TASK: Generate EXACTLY {batch_size} distinct assessment questions to map their skill depth.
+
+STYLE: Punchy, high-agency, ZERO corporate fluff. Match vocabulary to {education_level}.
 
 CONTEXT:
 - Phase: {phase_name}
 - Goal: {phase_goal}
 - Instruction: {phase_instruction}
-- Covered Topics: {covered_topics}
+- Probed Topics: {covered_topics}
 
 JSON STRUCTURE:
 {{
@@ -38,11 +42,13 @@ JSON STRUCTURE:
 }}
 
 RULES:
-- Under 20 words per question.
-- 3-8 short, predictable chips.
+- Maximum 15 words per question.
+- 3-8 short chips. Use "Other" (allows_other: true) for free-form depth.
 - Use {language} language.
-- Match vocabulary to {education_level}. No jargon.
-- Sound human, not like a form.
+- Never repeat a topic from 'Probed Topics'.
+- **DIFFICULTY**: If they answer confidently, push deeper. If they struggle, simplify.
+- **VARIETY**: Mix MCQ with single-choice. Avoid predictable patterns.
+- Be creative. Don't sound like a bureaucrat.
 
 {CONCISENESS_INSTRUCTION}
 """
@@ -99,11 +105,22 @@ def extract_covered_topics(conversation_history: list) -> str:
         obj = json.loads(content)
         if isinstance(obj, dict) and obj.get("questions"):
           for q in obj["questions"]:
-            if q.get("skill_probing"):
-              topics.append(str(q["skill_probing"]))
+            probing = q.get("skill_probing")
+            if probing:
+              # Ensure it's a string
+              topics.append(str(probing))
       except (json.JSONDecodeError, TypeError, KeyError):
         pass
   return ", ".join(topics) if topics else "none yet"
+
+def _format_answer(a: any) -> str:
+  """Safely formats an answer, extracting label/value from dicts if needed."""
+  if isinstance(a, list):
+    return ", ".join(_format_answer(item) for item in a)
+  if isinstance(a, dict):
+    # Handle chip-like objects: {"label": "...", "value": "..."}
+    return str(a.get("label") or a.get("value") or a)
+  return str(a)
 
 def format_qa_pairs(conversation_history: list) -> str:
   pairs = []
@@ -123,14 +140,12 @@ def format_qa_pairs(conversation_history: list) -> str:
             idx = int(idx_str)
             q = last_questions[idx] if idx < len(last_questions) else f"Question {idx + 1}"
             a = answers_raw[idx_str]
-            a_str = ", ".join(a) if isinstance(a, list) else str(a)
-            pairs.append(f"Q: {q}\nA: {a_str}")
+            pairs.append(f"Q: {q}\nA: {_format_answer(a)}")
         elif isinstance(answers_raw, list):
           for q, a in zip(last_questions, answers_raw):
-            a_str = ", ".join(a) if isinstance(a, list) else str(a)
-            pairs.append(f"Q: {q}\nA: {a_str}")
+            pairs.append(f"Q: {q}\nA: {_format_answer(a)}")
         else:
-          pairs.append(f"Q: {last_questions[0]}\nA: {answers_raw}")
+          pairs.append(f"Q: {last_questions[0]}\nA: {_format_answer(answers_raw)}")
       except (json.JSONDecodeError, TypeError):
         pairs.append(f"Q: {last_questions[0]}\nA: {msg['content']}")
       last_questions = []
@@ -148,12 +163,20 @@ async def generate_next_question(
   phase_num = get_phase_for_question(current_q_count + 1)
   phase = get_phase_config(phase_num)
 
-  max_phase_q = phase.get("max_questions", 4)
-  remaining_in_phase = max_phase_q - (current_q_count % max_phase_q) 
-  batch_size = min(3, remaining_in_phase) if remaining_in_phase > 0 else 3
+  # Correctly calculate remaining in current phase using defined ranges
+  phase_range = PHASE_QUESTION_RANGES.get(phase_num, (1, 11))
+  phase_end = phase_range[1]
+  remaining_in_phase = phase_end - current_q_count
+  
+  # Also respect the global limit
+  remaining_total = settings.assessment_max_questions - current_q_count
+  
+  batch_size = min(3, remaining_in_phase, remaining_total)
+  batch_size = max(1, batch_size) 
 
   conversation_history = session.get("adaptive_context", [])
   covered_topics = extract_covered_topics(conversation_history)
+  qa_context = format_qa_pairs(conversation_history)
 
   system_content = QUESTION_SYSTEM_PROMPT.format(
     user_type=user_profile.get("user_type", "individual"),
@@ -165,8 +188,12 @@ async def generate_next_question(
     language="Hindi" if user_profile.get("preferred_lang") == "hi" else "English",
     covered_topics=covered_topics,
     phase_number=phase_num,
-    batch_size=batch_size
+    batch_size=batch_size,
+    CONCISENESS_INSTRUCTION=CONCISENESS_INSTRUCTION
   )
+
+  if qa_context and qa_context != "No answers recorded.":
+    system_content += f"\n\nPREVIOUS Q&A (Do NOT repeat these topics):\n{qa_context}"
 
   messages = [{"role": "system", "content": system_content}]
   messages.extend(conversation_history)

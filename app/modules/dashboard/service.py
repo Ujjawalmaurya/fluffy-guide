@@ -32,54 +32,42 @@ class DashboardService:
         self._job_cache = {} # {user_id: (timestamp, list)}
 
     async def get_summary(self, user_id: str) -> dict:
-        # Fetch basic data in parallel where possible
-        user_task = self.repo.get_user(user_id)
-        profile_task = self.repo.get_profile(user_id)
-        prefs_task = self.repo.get_preferences(user_id)
-        
-        user, profile, prefs = await asyncio.gather(user_task, profile_task, prefs_task)
+        """
+        Fetches all data for the seeker dashboard summary in parallel.
+        """
+        # 1. Gather core data in parallel
+        (
+            user, 
+            profile, 
+            prefs, 
+            skills, 
+            gap_status, 
+            enrichment,
+            recent_activity
+        ) = await asyncio.gather(
+            self.repo.get_user(user_id),
+            self.repo.get_profile(user_id),
+            self.repo.get_preferences(user_id),
+            self.repo.get_user_skills(user_id),
+            self.repo.get_gap_report_status(user_id),
+            self.repo.get_profile_enrichment(user_id),
+            self.repo.get_recent_activities(user_id, limit=5)
+        )
+
         user = user or {}
         profile = profile or {}
         prefs = prefs or {}
+        skills = skills or []
+        gap_status = gap_status or {}
 
-        # Profile completion
+        # 2. Compute Profile Completion
         filled = [f for f in PROFILE_FIELDS if profile.get(f)]
         completion_pct = int(len(filled) / len(PROFILE_FIELDS) * 100)
 
-        state = profile.get("state", "")
+        # 3. Handle Skills and Tags for Recommendations
+        top_2_gaps = (gap_status.get("gaps") or [])[:2]
         career_interests = prefs.get("career_interests", [])
 
-        # Fetch skills from user_skill_profiles instead of session
-        db = self.repo.db # Using raw supabase client since we need to directly hit tables the repo doesn't map yet
-        skills_result = db.table("user_skill_profiles").select(
-           "skills"
-        ).eq("user_id", user_id).limit(1).execute()
-        
-        extracted_skills = []
-        if skills_result.data and skills_result.data[0].get("skills"):
-            for s in skills_result.data[0]["skills"]:
-                extracted_skills.append({
-                    "name": s.get("skill_name"),
-                    "proficiency": s.get("proficiency_label", "Intermediate"),
-                    "level": s.get("proficiency_numeric", 2)
-                })
-
-        # Check if assessment is done
-        assessment_done = user.get("quick_assessment_done", False)
-        onboarding_done = user.get("onboarding_done", False)
-
-
-        # Fetch gap analysis report status
-        gap_row = self.repo.db.table("gap_analysis_reports").select(
-           "is_stale, computed_at, gaps"
-        ).eq("user_id", user_id).limit(1).execute()
-        gap_report = gap_row.data[0] if gap_row.data else None
-        top_2_gaps = (
-           gap_report["gaps"][:2] if gap_report and gap_report.get("gaps") else []
-        )
-
-        # Fetch recommended resources based on skill gaps or interests.
-        # gaps are JSONB dicts {skill_name, priority_score, ...} — extract to plain strings.
         def _to_str_tags(items: list) -> list[str]:
             result = []
             for item in items:
@@ -91,66 +79,36 @@ class DashboardService:
                     result.append(item.lower())
             return result
 
-        raw_tags = top_2_gaps if top_2_gaps else career_interests
-        target_tags = _to_str_tags(raw_tags)
-        recommended_courses = await self.repo.get_recommended_resources(target_tags)
+        target_tags = _to_str_tags(top_2_gaps if top_2_gaps else career_interests)
 
-        # Fetch enrichment details (primary role, exp)
-        enrichment_row = self.repo.db.table("profile_enrichments").select(
-           "gemini_extracted, resume_parsed"
-        ).eq("user_id", user_id).limit(1).execute()
-        
-        enrich_data = enrichment_row.data[0] if enrichment_row.data else {}
-        # Ensure extracted is ALWAYS a dictionary, even if database fields are null or empty
-        raw_extracted = (enrich_data.get("gemini_extracted") or enrich_data.get("resume_parsed") or {})
-        extracted = raw_extracted if isinstance(raw_extracted, dict) else {}
-        
-        log.info(f"Dashboard summary context: user={user_id}, has_enrichment={bool(enrichment_row.data)}, extracted_keys={list(extracted.keys())}")
-        
-        primary_role = extracted.get("primary_role")
-        experience_years = extracted.get("total_experience_years", extracted.get("experience_years"))
+        # 4. Gather secondary data (Jobs, Resources, and Insight)
+        state = profile.get("state", "")
+        skill_names = [s["name"] for s in skills]
 
         # Check Job Cache (30 min TTL)
-        cached_jobs = None
+        job_matches = None
         if user_id in self._job_cache:
-            ts, jobs = self._job_cache[user_id]
+            ts, cached_jobs = self._job_cache[user_id]
             if time.time() - ts < 1800:
-                cached_jobs = jobs
+                job_matches = cached_jobs
 
-        # Prepare AI tasks for parallel execution
-        ai_tasks = []
+        tasks = [
+            self.repo.get_recommended_resources(target_tags),
+            self.get_dynamic_insight(user, profile, prefs, skills, top_2_gaps)
+        ]
         
-        # Job matching task
-        async def job_task():
-            if cached_jobs is not None:
-                return cached_jobs
-            try:
-                jobs = await asyncio.wait_for(
-                    self.rec_engine.get_recommendations(user_id, limit=3),
-                    timeout=30.0
-                )
-                self._job_cache[user_id] = (time.time(), jobs)
-                return jobs
-            except (asyncio.TimeoutError, Exception) as e:
-                log.warning(f"Job recommendations failed/timed out: {e}")
-                return []
+        if job_matches is None:
+            tasks.append(self.rec_engine.get_recommendations(user_id, limit=3))
+        
+        results = await asyncio.gather(*tasks)
+        
+        recommended_courses = results[0]
+        ai_insight = results[1]
+        if job_matches is None:
+            job_matches = results[2]
+            self._job_cache[user_id] = (time.time(), job_matches)
 
-        # AI Insight task
-        async def insight_task():
-            try:
-                return await asyncio.wait_for(
-                    self.generate_ai_insight(user, profile, prefs, extracted_skills, top_2_gaps),
-                    timeout=10.0
-                )
-            except (asyncio.TimeoutError, Exception) as e:
-                log.warning(f"AI insight failed/timed out: {e}")
-                return "Keep growing your skills to unlock new opportunities!"
-
-        # Execute AI tasks in parallel
-        job_matches, ai_insight = await asyncio.gather(job_task(), insight_task())
-
-
-        # Role-specific highlights
+        # 5. Role-specific highlights
         role_specific = {}
         role = user.get("user_type", "individual_youth")
 
@@ -180,53 +138,38 @@ class DashboardService:
                 "digital_tips": ["How to use WhatsApp Business", "Finding customers via Google Maps"]
             }
 
-        # (AI tasks handled in parallel above)
-
-        log.debug(f"Computed profile_completion={completion_pct}% for user={user_id}")
-
-        # Fetch recent activities
-        recent_activity = await self.repo.get_recent_activities(user_id, limit=5)
-
-        from app.schemas.response.user import UserDashboardResponse, UserProfileResponse
-
-        summary_data = {
-            "profile": {
-                "id": user_id,
-                "email": user.get("email", ""),
-                "full_name": profile.get("full_name"),
-                "career_stage": profile.get("career_stage") or role,
-                "age": profile.get("age"),
-                "gender": profile.get("gender"),
-                "state": profile.get("state"),
-                "city": profile.get("city"),
-                "education_level": profile.get("education_level"),
-                "languages": profile.get("languages") or user.get("languages") or ["english"],
-                "avatar_url": profile.get("avatar_url"),
-                "onboarding_done": onboarding_done,
-                "profile_complete_percentage": completion_pct
+        # 6. Build Final Response
+        return {
+            "user": {
+                "name": profile.get("full_name") or user.get("email"),
+                "user_type": role,
+                "preferred_lang": user.get("preferred_lang", "en")
             },
-            "ai_highlight": ai_insight,
+            "profile_completion_pct": completion_pct,
+            "onboarding_done": user.get("onboarding_done", False),
+            "quick_assessment_done": user.get("quick_assessment_done", False),
+            "gap_analysis_done": bool(gap_status.get("computed_at")),
+            "gap_analysis_stale": gap_status.get("is_stale", False),
+            "last_assessment_at": user.get("last_completed_at"),
+            "extracted_skills": skills,
+            "career_interests": career_interests,
+            "location": {
+                "state": state,
+                "city": profile.get("city")
+            },
             "job_matches": job_matches,
             "recommended_courses": recommended_courses,
             "role_specific": role_specific,
-            "primary_role": primary_role,
-            "experience_years": experience_years,
-            "extracted_skills": extracted_skills,
-            "quick_assessment_done": assessment_done,
+            "ai_highlight": ai_insight,
             "recent_activity": recent_activity,
             "progress_summary": {
                 "courses_completed": len([a for a in recent_activity if a["activity_type"] == "course_complete"]),
                 "assessments_taken": len([a for a in recent_activity if a["activity_type"] == "assessment_submit"]),
-                "skills_verified": len(extracted_skills)
-            },
-            "notifications_count": 0
+                "skills_verified": len(skills)
+            }
         }
 
-        # Validate with Pydantic
-        summary_model = UserDashboardResponse.model_validate(summary_data)
-        return summary_model.model_dump()
-
-    async def generate_ai_insight(self, user: dict, profile: dict, prefs: dict, skills: list, gaps: list) -> str:
+    async def get_dynamic_insight(self, user: dict, profile: dict, prefs: dict, skills: list, gaps: list) -> str:
         """Generates a short, punchy AI insight based on user context with caching."""
         user_id = user.get("id")
         
@@ -362,18 +305,36 @@ class DashboardService:
     # ── Talent Matching ──────────────────────────────────────────
 
     # Industry → candidate user_type/stream/career_interests keyword mapping
-    INDUSTRY_CANDIDATE_MAP = {
-        "IT & Software":     {"types": ["individual_youth"], "streams": ["Science", "Science & Tech"], "interest_keywords": ["Software Development", "Data Science", "AI/ML", "UI/UX Design", "Digital Marketing"]},
-        "Manufacturing":     {"types": ["individual_bluecollar"], "streams": ["Vocational"], "interest_keywords": ["Manufacturing", "Production", "Quality"]},
-        "Retail":            {"types": ["individual_youth", "individual_informal"], "streams": ["Commerce", "Commerce & Finance"], "interest_keywords": ["Sales", "Management"]},
-        "Healthcare":        {"types": ["individual_youth"], "streams": ["Science"], "interest_keywords": ["Healthcare"]},
-        "Construction":      {"types": ["individual_bluecollar"], "streams": ["Vocational"], "interest_keywords": ["Construction", "Electrical", "Plumbing"]},
-        "Finance":           {"types": ["individual_youth"], "streams": ["Commerce", "Commerce & Finance"], "interest_keywords": ["Finance", "Accounting", "Management"]},
-        "Education":         {"types": ["individual_youth"], "streams": ["Arts", "Science"], "interest_keywords": ["Teaching", "Management"]},
-        "Logistics":         {"types": ["individual_bluecollar", "individual_informal"], "streams": ["Vocational", "Other"], "interest_keywords": ["Logistics", "Management"]},
-        "Automobile":        {"types": ["individual_bluecollar"], "streams": ["Vocational"], "interest_keywords": ["Automobile", "Manufacturing"]},
-        "Other":             {"types": ["individual_youth", "individual_bluecollar", "individual_informal"], "streams": [], "interest_keywords": []},
-    }
+    async def _get_industry_mappings(self) -> dict:
+        """Fetch industry mappings from the database with caching."""
+        now = time.time()
+        # Cache for 1 hour
+        if hasattr(self, "_industry_map_cache") and (now - getattr(self, "_industry_map_cache_time", 0) < 3600):
+            return self._industry_map_cache
+
+        try:
+            result = self.repo.db.table("industry_mappings").select("*").execute()
+            mappings = {
+                row["industry_name"]: {
+                    "types": row["target_types"],
+                    "streams": row["target_streams"],
+                    "interest_keywords": row["interest_keywords"]
+                }
+                for row in result.data
+            }
+            # Fallback if DB is empty or missing 'Other'
+            if "Other" not in mappings:
+                mappings["Other"] = {"types": ["individual_youth", "individual_bluecollar", "individual_informal"], "streams": [], "interest_keywords": []}
+            
+            self._industry_map_cache = mappings
+            self._industry_map_cache_time = now
+            return mappings
+        except Exception as e:
+            log.error(f"Failed to fetch industry mappings: {e}")
+            # Robust fallback
+            return {
+                "Other": {"types": ["individual_youth", "individual_bluecollar", "individual_informal"], "streams": [], "interest_keywords": []}
+            }
 
     async def get_talent_matches(self, employer_id: str, limit: int = 5) -> list:
         """Return candidates that match the employer's industry, roles, and required skills."""
@@ -393,7 +354,8 @@ class DashboardService:
             log.info(f"Talent match for employer={employer_id}: industry={industry}, skills={req_skills[:5]}, roles={roles[:5]}")
 
             # 2. Determine which candidate user_types + streams this industry maps to
-            mapping      = self.INDUSTRY_CANDIDATE_MAP.get(industry, self.INDUSTRY_CANDIDATE_MAP["Other"])
+            industry_maps = await self._get_industry_mappings()
+            mapping      = industry_maps.get(industry, industry_maps.get("Other"))
             target_types = mapping["types"]
             target_streams      = mapping["streams"]
             interest_keywords   = mapping["interest_keywords"]

@@ -108,7 +108,8 @@ async def build_roadmap(
         user_type=user_profile_data.get("user_type", "individual"),
         state=user_profile_data.get("state", "India"),
         interests=", ".join(
-            user_profile_data.get("career_interests") or []
+            str(i.get("label") if isinstance(i, dict) else i)
+            for i in (user_profile_data.get("career_interests") or [])
         ),
         top_gaps=json.dumps(
             [g["skill_name"] for g in top_gaps]

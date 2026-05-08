@@ -46,7 +46,10 @@ RULES:
 
 def build_user_prompt(user_type: str, state: str, career_interests: list[str], language: str) -> str:
     hint = USER_TYPE_HINTS.get(user_type, "Ask about skills, goals, and work experience.")
-    interests_str = ", ".join(career_interests) if career_interests else "general workforce"
+    interests_str = ", ".join(
+        str(i.get("label") if isinstance(i, dict) else i)
+        for i in career_interests
+    ) if career_interests else "general workforce"
     lang_instruction = "Respond in Hindi." if language == "hi" else "Respond in English."
 
     return f"""USER PROFILE:

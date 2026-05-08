@@ -1,10 +1,11 @@
+import asyncio
 import json
-from datetime import datetime, timedelta, timezone
-from app.modules.assessment import repository, adaptive_engine
+from datetime import datetime, timezone, timedelta
+from app.modules.assessment.repository import AssessmentRepository
+from app.modules.assessment import adaptive_engine
 from app.modules.skill_profile import aggregator as skill_aggregator
 from app.modules.skill_profile.repository import SkillProfileRepository
 from app.modules.ai_chat.providers.base import ILLMProvider
-from app.core.database import get_supabase
 from app.core.logger import get_logger
 from app.core.config import settings
 from app.shared.exceptions import AppError
@@ -23,15 +24,16 @@ def _utcnow():
     return datetime.now(timezone.utc)
 
 class AssessmentService:
-    def __init__(self, llm_provider: ILLMProvider):
+    def __init__(self, repo: AssessmentRepository, llm_provider: ILLMProvider):
+        self.repo = repo
         self.llm_provider = llm_provider
 
     async def check_retake_eligibility(self, user_id: str) -> dict:
         max_retakes = settings.assessment_max_retakes
         total_allowed = max_retakes + 1
         
-        completed_count = await repository.get_completed_count(user_id)
-        active_session = await repository.get_active_session(user_id)
+        completed_count = await self.repo.get_completed_count(user_id)
+        active_session = await self.repo.get_active_session(user_id)
         
         if active_session:
             retakes_used = max(0, completed_count - 1)
@@ -42,7 +44,7 @@ class AssessmentService:
             }
             
         if completed_count >= total_allowed:
-            last = await repository.get_last_completed(user_id)
+            last = await self.repo.get_last_completed(user_id)
             cooldown_hours = settings.assessment_retake_cooldown_hours
             cooldown_expires = None
             if last:
@@ -73,7 +75,7 @@ class AssessmentService:
             raise ASSESSMENT_NO_RETAKES(next_available_at=eligibility["next_retake_available_at"])
             
         if eligibility["has_incomplete"]:
-            session = await repository.get_session_by_id(eligibility["incomplete_session_id"], user_id)
+            session = await self.repo.get_session_by_id(eligibility["incomplete_session_id"], user_id)
             batch = await adaptive_engine.generate_next_question(session, {**user_profile, "user_id": user_id}, self.llm_provider)
             return {
                 "session_id": session["id"], "batch": batch, "phase": batch.get("phase"),
@@ -81,12 +83,12 @@ class AssessmentService:
                 "can_resume": True, **eligibility
             }
             
-        completed_count = await repository.get_completed_count(user_id)
-        session = await repository.create_session(user_id=user_id, retake_number=completed_count, max_retakes=settings.assessment_max_retakes)
+        completed_count = await self.repo.get_completed_count(user_id)
+        session = await self.repo.create_session(user_id=user_id, retake_number=completed_count, max_retakes=settings.assessment_max_retakes)
         
         batch = await adaptive_engine.generate_next_question(session, {**user_profile, "user_id": user_id}, self.llm_provider)
         
-        await repository.update_session(
+        await self.repo.update_session(
             session["id"],
             adaptive_context=[{"role": "assistant", "content": json.dumps(batch)}],
             current_question_number=0, last_question_at=_utcnow().isoformat()
@@ -98,7 +100,7 @@ class AssessmentService:
         }
 
     async def submit_answer(self, session_id: str, answer: any, user_id: str, user_profile: dict) -> dict:
-        session = await repository.get_session_by_id(session_id, user_id)
+        session = await self.repo.get_session_by_id(session_id, user_id)
         if not session: raise ValueError("Session not found")
         if session["is_complete"]: raise ASSESSMENT_SESSION_EXPIRED()
             
@@ -113,16 +115,20 @@ class AssessmentService:
         except (json.JSONDecodeError, TypeError): batch_size = 1
         
         new_q_number = session["current_question_number"] + batch_size
-        is_complete = (new_q_number >= settings.assessment_max_questions)
+        max_total = settings.assessment_max_questions
+        is_complete = (new_q_number >= max_total)
         
         if is_complete:
             return await self._complete_assessment(session_id, user_id, new_context, user_profile)
             
+        # Ensure next batch doesn't exceed total allowed
+        remaining = max_total - new_q_number
+        
         updated_session = {**session, "adaptive_context": new_context, "current_question_number": new_q_number}
         batch = await adaptive_engine.generate_next_question(updated_session, {**user_profile, "user_id": user_id}, self.llm_provider)
         
         new_context.append({"role": "assistant", "content": json.dumps(batch)})
-        await repository.update_session(session_id, adaptive_context=new_context, current_question_number=new_q_number, phase=batch.get("phase"), last_question_at=_utcnow().isoformat())
+        await self.repo.update_session(session_id, adaptive_context=new_context, current_question_number=new_q_number, phase=batch.get("phase"), last_question_at=_utcnow().isoformat())
         
         eligibility = await self.check_retake_eligibility(user_id)
         return {
@@ -135,16 +141,15 @@ class AssessmentService:
         extracted = await adaptive_engine.extract_skills_from_session(temp_session, {**user_profile, "user_id": user_id}, self.llm_provider)
         skills = extracted.get("skills", [])
         
-        await repository.update_session(session_id, is_complete=True, completed_at=_utcnow().isoformat(), adaptive_context=final_context, extracted_proficiency=skills)
-        
-        skill_repo = SkillProfileRepository(get_supabase())
-        await skill_aggregator.merge_from_assessment(user_id, skills, skill_repo)
-
-        db = get_supabase()
-        db.table("users").update({"quick_assessment_done": True}).eq("id", user_id).execute()
-        db.table("gap_analysis_reports").update({"is_stale": True}).eq("user_id", user_id).execute()
-        
-        await repository.log_activity(user_id, "assessment_complete", f"Completed AI Assessment with {len(skills)} skills verified.", {"skills_count": len(skills), "session_id": session_id})
+        # Parallelize independent completion tasks
+        skill_repo = SkillProfileRepository(self.repo.db)
+        await asyncio.gather(
+            self.repo.update_session(session_id, is_complete=True, completed_at=_utcnow().isoformat(), adaptive_context=final_context, extracted_proficiency=skills),
+            skill_aggregator.merge_from_assessment(user_id, skills, skill_repo),
+            self.repo.mark_assessment_done(user_id),
+            self.repo.invalidate_gap_analysis(user_id),
+            self.repo.log_activity(user_id, "assessment_complete", f"Completed AI Assessment with {len(skills)} skills verified.", {"skills_count": len(skills), "session_id": session_id})
+        )
         
         eligibility = await self.check_retake_eligibility(user_id)
         return {
@@ -152,3 +157,4 @@ class AssessmentService:
             "career_goals": extracted.get("career_goals", []), "assessment_summary": extracted.get("assessment_summary", ""),
             "retakes_remaining": eligibility["retakes_remaining"]
         }
+

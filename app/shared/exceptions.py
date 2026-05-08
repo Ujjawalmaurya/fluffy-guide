@@ -25,7 +25,7 @@ class AppError(Exception):
 def register_exception_handlers(app: FastAPI):
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError):
-        log.warning(f"AppError [{exc.error_code}]: {exc.message}")
+        log.warning("AppError [{}]: {}", exc.error_code, exc.message)
         return JSONResponse(
             status_code=exc.status_code,
             content={
@@ -39,7 +39,7 @@ def register_exception_handlers(app: FastAPI):
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request: Request, exc: RequestValidationError):
         errors = exc.errors()
-        log.warning(f"Validation error: {errors}")
+        log.warning("Validation error: {}", errors)
         
         # Comprehensive field mapping for human-readable labels
         FIELD_MAP = {
@@ -225,7 +225,7 @@ def register_exception_handlers(app: FastAPI):
     async def pydantic_validation_error_handler(request: Request, exc: ValidationError):
         """Handle Pydantic internal validation errors (e.g. from service layer)."""
         errors = exc.errors()
-        log.error(f"Internal Data Integrity Error: {errors}")
+        log.error("Internal Data Integrity Error: {}", errors)
         
         msg = "We encountered an internal data error. This has been logged."
         if settings.app_env == "development":
@@ -243,7 +243,7 @@ def register_exception_handlers(app: FastAPI):
 
     @app.exception_handler(Exception)
     async def generic_error_handler(request: Request, exc: Exception):
-        log.error(f"Unhandled exception: {type(exc).__name__}: {exc}", exc_info=True)
+        log.error("Unhandled exception: {}: {}", type(exc).__name__, str(exc), exc_info=True)
         
         msg = "Something went wrong on our end."
         error_type = type(exc).__name__

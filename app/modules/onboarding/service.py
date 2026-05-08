@@ -27,199 +27,80 @@ class OnboardingService:
         self.repo = repo
         self.llm_provider = llm_provider
 
-    def calculate_student_completion(self, data: StudentOnboardingRequest) -> int:
-        """
-        Req: name, state, education_level (20% each = 60%)
-        Opt: age, gender, city, job_pref, stream, institution, interests, languages (5% each = 40%)
-        """
-        percentage = 0
-        # Mandatory
-        if data.full_name: percentage += 20
-        if data.state: percentage += 20
-        if data.education_level: percentage += 20
+    def _calculate_completion(self, data, mandatory_fields: list[str], optional_fields: list[str]) -> int:
+        """Generic completion percentage calculator."""
+        data_dict = data.model_dump()
         
-        # Optional
-        if data.age: percentage += 5
-        if data.gender: percentage += 5
-        if data.city: percentage += 5
-        if data.preferred_job_location: percentage += 5
-        if data.stream: percentage += 5
-        if data.institution_name: percentage += 5
-        if data.career_interests: percentage += 5
-        if data.languages_known: percentage += 5
+        # Mandatory: 60% total (split equally)
+        m_count = len(mandatory_fields)
+        m_filled = sum(1 for f in mandatory_fields if data_dict.get(f))
+        m_score = int((m_filled / m_count) * 60) if m_count > 0 else 60
         
-        return min(percentage, 100)
+        # Optional: 40% total (split equally)
+        o_count = len(optional_fields)
+        o_filled = 0
+        for f in optional_fields:
+            val = data_dict.get(f)
+            if val is not None and (not isinstance(val, (list, str)) or len(val) > 0):
+                o_filled += 1
+        o_score = int((o_filled / o_count) * 40) if o_count > 0 else 40
+        
+        return min(m_score + o_score, 100)
+
+    async def _save_and_mark_progress(self, user_id: str, data, mandatory: list[str], optional: list[str], step: int = 5, auto_done: bool = True):
+        """Unified helper to save profile and handle onboarding state."""
+        percentage = self._calculate_completion(data, mandatory, optional)
+        await self.repo.save_user_profile(user_id, data.model_dump())
+        
+        is_done = auto_done or percentage >= 60
+        if is_done:
+            await self.repo.mark_onboarding_done(user_id)
+            log.info(f"Onboarding COMPLETED for user={user_id}, percentage={percentage}%")
+        else:
+            await self.repo.update_user_onboarding(user_id, step, percentage)
+            log.info(f"Onboarding progress: user={user_id}, step={step}, percentage={percentage}%")
+            
+        return {
+            "percentage": percentage, 
+            "onboarding_done": is_done,
+            "status": "completed" if is_done else "in_progress"
+        }
 
     async def save_student_onboarding(self, user_id: str, data: StudentOnboardingRequest, step: int):
-        """Save student profile data and update onboarding progress."""
-        percentage = self.calculate_student_completion(data)
-        await self.repo.save_student_profile(user_id, data.model_dump())
-        
-        log.info(f"Student onboarding: user={user_id}, step={step}, percentage={percentage}%")
-        
-        # In the new flow, the frontend sends everything at once. 
-        # We mark it done if step=4 (final step for student) OR if we received a substantially complete profile.
-        if step >= 4 or percentage >= 60:
-            await self.repo.mark_onboarding_done(user_id)
-            log.info(f"Student onboarding COMPLETED for user={user_id}")
-        else:
-            await self.repo.update_user_onboarding(user_id, step, percentage)
-            log.info(f"Student onboarding progress updated for user={user_id}")
-
-    def calculate_blue_collar_completion(self, data: BlueCollarOnboardingRequest) -> int:
-        """
-        Req: name, state, primary_trade (20% each = 60%)
-        Opt: age, gender, city, village, sec_skills, exp, employed, radius, smartphone, languages (4% each = 40%)
-        """
-        percentage = 0
-        # Mandatory
-        if data.full_name: percentage += 20
-        if data.state: percentage += 20
-        if data.primary_trade: percentage += 20
-        
-        # Optional
-        if data.age: percentage += 4
-        if data.gender: percentage += 4
-        if data.city: percentage += 4
-        if data.village_district: percentage += 4
-        if data.secondary_skills: percentage += 4
-        if data.years_experience: percentage += 4
-        if data.is_currently_employed: percentage += 4
-        if data.preferred_work_radius: percentage += 4
-        if data.owns_smartphone is not None: percentage += 4
-        if data.languages_known: percentage += 4
-        
-        return min(percentage, 100)
+        mandatory = ["full_name", "state", "education_level"]
+        optional = ["age", "gender", "city", "preferred_job_location", "stream", "institution_name", "career_interests", "languages_known"]
+        return await self._save_and_mark_progress(user_id, data, mandatory, optional, step, auto_done=(step >= 4))
 
     async def save_blue_collar_onboarding(self, user_id: str, data: BlueCollarOnboardingRequest, step: int):
-        """Save blue collar profile data and update onboarding progress."""
-        percentage = self.calculate_blue_collar_completion(data)
-        await self.repo.save_blue_collar_profile(user_id, data.model_dump())
-        
-        log.info(f"Blue collar onboarding: user={user_id}, step={step}, percentage={percentage}%")
-        
-        if step >= 5 or percentage >= 60:
-            await self.repo.mark_onboarding_done(user_id)
-            log.info(f"Blue collar onboarding COMPLETED for user={user_id}")
-        else:
-            await self.repo.update_user_onboarding(user_id, step, percentage)
-            log.info(f"Blue collar onboarding progress updated for user={user_id}")
+        mandatory = ["full_name", "state", "primary_trade"]
+        optional = ["age", "gender", "city", "village_district", "secondary_skills", "years_experience", "is_currently_employed", "preferred_work_radius", "owns_smartphone", "languages_known"]
+        return await self._save_and_mark_progress(user_id, data, mandatory, optional, step, auto_done=(step >= 5))
 
-    def calculate_informal_worker_completion(self, data: InformalWorkerOnboardingRequest) -> int:
-        mandatory_fields = ['full_name', 'state', 'current_work_type']
-        optional_fields = ['age', 'gender', 'city_village', 'monthly_income', 'interests', 'languages_known']
-        
-        # Base 60% for mandatory
-        mandatory_score = 60
-        
-        # 40% for optional
-        optional_count = len(optional_fields)
-        filled_optional = 0
-        
-        data_dict = data.model_dump()
-        for field in optional_fields:
-            val = data_dict.get(field)
-            if val and (not isinstance(val, list) or len(val) > 0):
-                filled_optional += 1
-                
-        optional_score = int((filled_optional / optional_count) * 40)
-        return mandatory_score + optional_score
-
-    async def save_informal_worker_onboarding(self, user_id: str, data: InformalWorkerOnboardingRequest):
-        percentage = self.calculate_informal_worker_completion(data)
-        
-        await self.repo.save_informal_worker_profile(user_id, data.model_dump())
-        
-        await self.repo.mark_onboarding_done(user_id)
-        
-        return {"percentage": percentage, "status": "onboarded"}
-
-    def calculate_employer_completion(self, data: EmployerOnboardingRequest) -> int:
-        mandatory_fields = ['company_name', 'industry_sector', 'state', 'city']
-        optional_fields = ['contact_person_name', 'designation', 'company_size', 'roles_hiring_for', 'preferred_skills', 'work_type_offered']
-        
-        # Base 60% for mandatory
-        mandatory_score = 60
-        
-        # 40% for optional
-        optional_count = len(optional_fields)
-        filled_optional = 0
-        
-        data_dict = data.model_dump()
-        for field in optional_fields:
-            val = data_dict.get(field)
-            if val and (not isinstance(val, list) or len(val) > 0):
-                filled_optional += 1
-                
-        optional_score = int((filled_optional / optional_count) * 40)
-        return mandatory_score + optional_score
+    async def save_informal_worker_onboarding(self, user_id: str, data: InformalWorkerOnboardingRequest, step: int = 5):
+        mandatory = ["full_name", "state", "current_work_type"]
+        optional = ["age", "gender", "city_village", "monthly_income", "interests", "languages_known"]
+        return await self._save_and_mark_progress(user_id, data, mandatory, optional, step=step)
 
     async def save_employer_onboarding(self, user_id: str, data: EmployerOnboardingRequest):
-        percentage = self.calculate_employer_completion(data)
-        
-        await self.repo.save_employer_profile(user_id, data.model_dump())
-        
-        await self.repo.mark_onboarding_done(user_id)
-        
-        return {"percentage": percentage, "status": "onboarded", "redirect": "/employer-dashboard"}
-
-    def calculate_ngo_completion(self, data: NGOOnboardingRequest) -> int:
-        mandatory_fields = ['org_name', 'focus_sectors', 'coverage_areas']
-        optional_fields = ['registration_number', 'beneficiary_types', 'contact_name', 'contact_designation']
-        
-        # Base 60% for mandatory
-        mandatory_score = 60
-        
-        # 40% for optional
-        optional_count = len(optional_fields)
-        filled_optional = 0
-        
-        data_dict = data.model_dump()
-        for field in optional_fields:
-            val = data_dict.get(field)
-            if val and (not isinstance(val, list) or len(val) > 0):
-                filled_optional += 1
-                
-        optional_score = int((filled_optional / optional_count) * 40)
-        return mandatory_score + optional_score
+        mandatory = ["company_name", "industry_sector", "state", "city"]
+        optional = ["contact_person_name", "designation", "company_size", "roles_hiring_for", "preferred_skills", "work_type_offered"]
+        res = await self._save_and_mark_progress(user_id, data, mandatory, optional, step=5)
+        res["redirect"] = "/employer-dashboard"
+        return res
 
     async def save_ngo_onboarding(self, user_id: str, data: NGOOnboardingRequest):
-        percentage = self.calculate_ngo_completion(data)
-        
-        await self.repo.save_ngo_profile(user_id, data.model_dump())
-        
-        await self.repo.mark_onboarding_done(user_id)
-        
-        return {"percentage": percentage, "status": "onboarded", "redirect": "/ngo-dashboard"}
-
-    def calculate_govt_completion(self, data: GovtOfficerOnboardingRequest) -> int:
-        mandatory_fields = ['full_name', 'department', 'state_jurisdiction']
-        optional_fields = ['designation', 'access_level', 'district_jurisdiction']
-        
-        # Base 60% for mandatory
-        mandatory_score = 60
-        
-        # 40% for optional
-        optional_count = len(optional_fields)
-        filled_optional = 0
-        
-        data_dict = data.model_dump()
-        for field in optional_fields:
-            val = data_dict.get(field)
-            if val and (not isinstance(val, list) or len(val) > 0):
-                filled_optional += 1
-                
-        optional_score = int((filled_optional / optional_count) * 40)
-        return mandatory_score + optional_score
+        mandatory = ["org_name", "focus_sectors", "coverage_areas"]
+        optional = ["registration_number", "beneficiary_types", "contact_name", "contact_designation"]
+        res = await self._save_and_mark_progress(user_id, data, mandatory, optional, step=5)
+        res["redirect"] = "/ngo-dashboard"
+        return res
 
     async def save_govt_onboarding(self, user_id: str, data: GovtOfficerOnboardingRequest):
-        percentage = self.calculate_govt_completion(data)
-        
-        await self.repo.save_govt_profile(user_id, data.model_dump())
-        
-        await self.repo.mark_onboarding_done(user_id)
-        
-        return {"percentage": percentage, "status": "onboarded", "redirect": "/govt-dashboard"}
+        mandatory = ["full_name", "department", "state_jurisdiction"]
+        optional = ["designation", "access_level", "district_jurisdiction"]
+        res = await self._save_and_mark_progress(user_id, data, mandatory, optional, step=5)
+        res["redirect"] = "/govt-dashboard"
+        return res
 
     async def set_user_type(self, user_id: str, data: UserTypeRequest):
         # Fetch current user to check if user_type is already set (immutability rule)
@@ -235,14 +116,16 @@ class OnboardingService:
         log.info(f"User type set: {data.user_type} for user={user_id}")
 
     async def save_profile(self, user_id: str, data: ProfileRequest):
-        await self.repo.upsert_profile(user_id, data.model_dump())
+        """Generic profile save (Step 2 in some flows)."""
+        await self.repo.save_user_profile(user_id, data.model_dump())
         await self.repo.upsert_state(user_id, current_step=3, completed_steps=[1, 2])
-        log.info(f"Profile saved for user={user_id}, location={data.city}, {data.state}")
+        log.info(f"Profile saved for user={user_id}")
 
     async def save_preferences(self, user_id: str, data: PreferencesRequest):
-        await self.repo.upsert_preferences(user_id, data.model_dump())
+        """Generic preferences save (Step 3 in some flows)."""
+        await self.repo.save_user_profile(user_id, data.model_dump())
         await self.repo.upsert_state(user_id, current_step=4, completed_steps=[1, 2, 3])
-        log.info(f"Preferences saved. career_interests={data.career_interests}")
+        log.info(f"Preferences saved for user={user_id}")
 
     async def generate_questions(self, user_id: str, data: GenerateQuestionsRequest) -> list[dict]:
         user = await self.repo.get_user(user_id)

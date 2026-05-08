@@ -30,6 +30,43 @@ class DashboardRepository:
             .execute()
         return result.data[0] if result.data else None
 
+    async def get_user_skills(self, user_id: str) -> list[dict]:
+        """Fetches verified skills from the aggregated skill profile."""
+        result = self.db.table("user_skill_profiles") \
+            .select("skills") \
+            .eq("user_id", user_id) \
+            .limit(1) \
+            .execute()
+        
+        if result.data and result.data[0].get("skills"):
+            return [
+                {
+                    "name": s.get("skill_name"),
+                    "proficiency": s.get("proficiency_label", "Intermediate"),
+                    "level": s.get("proficiency_numeric", 2)
+                }
+                for s in result.data[0]["skills"]
+            ]
+        return []
+
+    async def get_gap_report_status(self, user_id: str) -> dict | None:
+        """Fetches the status and metadata of the user's gap analysis report."""
+        result = self.db.table("gap_analysis_reports") \
+            .select("is_stale, computed_at, gaps") \
+            .eq("user_id", user_id) \
+            .limit(1) \
+            .execute()
+        return result.data[0] if result.data else None
+
+    async def get_profile_enrichment(self, user_id: str) -> dict | None:
+        """Fetches profile enrichment details (parsed role, exp, etc)."""
+        result = self.db.table("profile_enrichments") \
+            .select("gemini_extracted, updated_at") \
+            .eq("user_id", user_id) \
+            .limit(1) \
+            .execute()
+        return result.data[0] if result.data else None
+
     async def get_job_matches(self, state: str, interests: list[str], user_skills: list[str] = None, limit: int = 3) -> list[dict]:
         user_skills = user_skills or []
         user_skills_set = {s.lower() for s in user_skills}

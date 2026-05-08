@@ -116,14 +116,20 @@ CATEGORY_MAPPING = {
     "driving": "logistics"
 }
 
-def _map_interests(interests: list[str]) -> list[str]:
+def _map_interests(interests: list) -> list[str]:
     mapped = set()
     for i in interests:
-        low_i = i.lower()
+        # Robust string conversion and extraction
+        if isinstance(i, dict):
+            val = str(i.get("label") or i.get("value") or i)
+        else:
+            val = str(i)
+            
+        low_i = val.lower()
         mapped.add(low_i)  # Add original
-        for key, val in CATEGORY_MAPPING.items():
+        for key, val_mapped in CATEGORY_MAPPING.items():
             if key in low_i:
-                mapped.add(val)
+                mapped.add(val_mapped)
     return list(mapped)
 
 async def compute_gap(user_id: str) -> dict:
