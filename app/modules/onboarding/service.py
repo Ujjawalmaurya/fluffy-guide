@@ -5,7 +5,7 @@ Delegates DB ops to repository.
 """
 from app.modules.onboarding.repository import OnboardingRepository
 from app.modules.onboarding.question_engine import generate_questions
-from app.modules.ai_chat.providers.base import ILLMProvider
+from app.modules.ai_chat.providers.base import IStructuredProvider
 from app.schemas.request.onboarding import (
     UserTypeRequest, ProfileRequest, PreferencesRequest, StudentOnboardingRequest, BlueCollarOnboardingRequest,
     InformalWorkerOnboardingRequest, EmployerOnboardingRequest, NGOOnboardingRequest, GovtOfficerOnboardingRequest,
@@ -23,7 +23,7 @@ VALID_USER_TYPES = {
 
 
 class OnboardingService:
-    def __init__(self, repo: OnboardingRepository, llm_provider: ILLMProvider):
+    def __init__(self, repo: OnboardingRepository, llm_provider: IStructuredProvider):
         self.repo = repo
         self.llm_provider = llm_provider
 

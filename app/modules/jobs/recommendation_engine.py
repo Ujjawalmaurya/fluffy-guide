@@ -1,6 +1,6 @@
 import json
 from loguru import logger
-from app.modules.ai_chat.providers.base import ILLMProvider
+from app.modules.ai_chat.providers.base import IStructuredProvider
 from app.core import llm_config
 from app.modules.dashboard.repository import DashboardRepository
 from app.modules.skill_profile.repository import SkillProfileRepository
@@ -31,7 +31,7 @@ JOB LISTINGS:
 Return rankings now."""
 
 class JobRecommendationEngine:
-    def __init__(self, db, llm_provider: ILLMProvider):
+    def __init__(self, db, llm_provider: IStructuredProvider):
         self.dash_repo = DashboardRepository(db)
         self.skill_repo = SkillProfileRepository(db)
         self.llm_provider = llm_provider
@@ -111,7 +111,8 @@ class JobRecommendationEngine:
                         {"role": "system", "content": RANKING_SYSTEM_PROMPT},
                         {"role": "user", "content": user_prompt}
                     ],
-                    config=llm_config.JOB_RANKING
+                    config=llm_config.JOB_RANKING,
+                    timeout=4.0
                 )
                 
                 # Ensure ranked_data is a list

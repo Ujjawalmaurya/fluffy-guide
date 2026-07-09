@@ -38,18 +38,33 @@ class UserProfileResponse(BaseSchema):
     )
 
 
+class DashboardUserSchema(BaseSchema):
+    name: Optional[str] = None
+    user_type: Optional[str] = None
+    preferred_lang: Optional[str] = "en"
+
+
+class DashboardLocationSchema(BaseSchema):
+    state: Optional[str] = None
+    city: Optional[str] = None
+
+
 class UserDashboardResponse(BaseSchema):
     """Dashboard summary for the user."""
-    profile: UserProfileResponse
-    ai_highlight: Optional[str] = None
+    user: DashboardUserSchema
+    profile_completion_pct: int = 0
+    onboarding_done: bool = False
+    quick_assessment_done: bool = False
+    gap_analysis_done: bool = False
+    gap_analysis_stale: bool = False
+    last_assessment_at: Optional[Any] = None
+    extracted_skills: List[dict] = []
+    career_interests: List[str] = []
+    location: DashboardLocationSchema
     job_matches: List[dict] = []
     recommended_courses: List[dict] = []
     role_specific: Optional[dict] = None
-    show_assessment_nudge: bool = False
-    primary_role: Optional[str] = None
-    experience_years: Optional[int] = None
-    extracted_skills: List[dict] = []
-    quick_assessment_done: bool = False
+    ai_highlight: Optional[str] = None
     recent_activity: List[dict] = []
     
     progress_summary: dict = {
@@ -62,14 +77,22 @@ class UserDashboardResponse(BaseSchema):
     model_config = BaseSchema.get_config(
         json_schema_extra={
             "example": {
-                "profile": {
-                    "id": "user_123",
-                    "email": "raj@example.com",
-                    "full_name": "Raj Kumar",
-                    "career_stage": "student",
-                    "onboarding_done": True,
-                    "profile_complete_percentage": 85,
-                    "languages": ["english"]
+                "user": {
+                    "name": "Mohan Blue",
+                    "user_type": "individual_youth",
+                    "preferred_lang": "en"
+                },
+                "profile_completion_pct": 87,
+                "onboarding_done": True,
+                "quick_assessment_done": False,
+                "gap_analysis_done": False,
+                "gap_analysis_stale": False,
+                "last_assessment_at": None,
+                "extracted_skills": [],
+                "career_interests": ["Software Development"],
+                "location": {
+                    "state": "uttar_pradesh",
+                    "city": "Faizabad"
                 },
                 "ai_highlight": "Focus on Python to unlock 5 new roles.",
                 "job_matches": [],

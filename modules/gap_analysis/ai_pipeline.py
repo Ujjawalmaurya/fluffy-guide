@@ -3,7 +3,7 @@ from typing import List, Dict, Optional
 import asyncio
 
 class GapAnalysisAIPipeline:
-    def __init__(self, model_name: str = "qwen2.5:0.5b"):
+    def __init__(self, model_name: str = "qwen3:4b"):
         self.model_name = model_name
         self.MAX_RETRIES = 2
         self.RETRY_DELAY = 1

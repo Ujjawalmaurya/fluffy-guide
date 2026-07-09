@@ -1,5 +1,5 @@
 from app.modules.dashboard.repository import DashboardRepository
-from app.modules.ai_chat.providers.base import ILLMProvider
+from app.modules.ai_chat.providers.base import IStructuredProvider
 from app.modules.ai_chat.context_builder import build_context_json
 from app.modules.jobs.recommendation_engine import JobRecommendationEngine
 from app.core.logger import get_logger
@@ -24,7 +24,7 @@ RULES:
 """
 
 class DashboardService:
-    def __init__(self, repo: DashboardRepository, ai_provider: ILLMProvider):
+    def __init__(self, repo: DashboardRepository, ai_provider: IStructuredProvider):
         self.repo = repo
         self.ai_provider = ai_provider
         self.rec_engine = JobRecommendationEngine(repo.db, self.ai_provider)
@@ -199,12 +199,15 @@ class DashboardService:
                 {"role": "user", "content": user_prompt}
             ]
             
-            # Use a slightly lower max_tokens and context_window for speed
+            # Use a slightly lower max_tokens and context_window for speed, and use the extraction model + 3s timeout
+            from app.core.llm_config import EXTRACTION_MODEL
             response = await self.ai_provider.complete(
                 messages, 
                 language=user.get("preferred_lang", "en"), 
                 max_tokens=40,
-                context_window=1024
+                context_window=1024,
+                model=EXTRACTION_MODEL,
+                timeout=3.0
             )
             
             insight = response.strip().strip('"').strip("'")

@@ -1,7 +1,7 @@
 import json
 from loguru import logger
 from fastapi import HTTPException
-from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
+from app.modules.ai_chat.providers.base import IStructuredProvider
 from app.core.llm_config import RESUME_PARSE
 from models.resume_analysis_models import StructuredProfile, Skill
 from services.pdf_extractor import extract_resume_text
@@ -89,8 +89,9 @@ def normalize_ai_output(data: dict) -> dict:
     else:
         data["skills"] = []
 
-    # 2. Handle "experiences" inner field synonyms
+    # 2. Handle "experiences" inner field synonyms and nulls
     if isinstance(data.get("experiences"), list):
+        normalized_exp = []
         for exp in data["experiences"]:
             if isinstance(exp, dict):
                 # Handle duration vs duration_months
@@ -104,6 +105,53 @@ def normalize_ai_output(data: dict) -> dict:
                         end = dur.get("end_year") or dur.get("start_year")
                         if start and end:
                             exp["duration_months"] = (int(end) - int(start) + 1) * 12
+
+                # Enforce defaults/null handling for ExperienceEntry to prevent Pydantic ValidationErrors
+                exp["company"] = exp.get("company") or "Unknown Company"
+                exp["role"] = exp.get("role") or "Role not specified"
+                
+                dur_m = exp.get("duration_months")
+                if dur_m is None or not isinstance(dur_m, (int, float)):
+                    exp["duration_months"] = 0
+                else:
+                    exp["duration_months"] = int(dur_m)
+                
+                sen = exp.get("seniority_level")
+                if sen not in ["junior", "mid", "senior", "lead", "unclear"]:
+                    exp["seniority_level"] = "unclear"
+                
+                for list_f in ["skills_used", "achievements", "responsibilities"]:
+                    if not isinstance(exp.get(list_f), list):
+                        exp[list_f] = []
+                        
+                ach_ratio = exp.get("achievement_ratio")
+                if ach_ratio is None or not isinstance(ach_ratio, (int, float)):
+                    exp["achievement_ratio"] = 0.0
+                else:
+                    exp["achievement_ratio"] = float(ach_ratio)
+                
+                normalized_exp.append(exp)
+        data["experiences"] = normalized_exp
+    else:
+        data["experiences"] = []
+
+    # 2b. Handle "education" nulls
+    if isinstance(data.get("education"), list):
+        normalized_edu = []
+        for edu in data["education"]:
+            if isinstance(edu, dict):
+                edu["degree"] = edu.get("degree") or "Degree not specified"
+                edu["institution"] = edu.get("institution") or "Institution not specified"
+                
+                if edu.get("is_vocational") is None:
+                    edu["is_vocational"] = False
+                if edu.get("is_certified") is None:
+                    edu["is_certified"] = False
+                
+                normalized_edu.append(edu)
+        data["education"] = normalized_edu
+    else:
+        data["education"] = []
 
     # 3. Handle "career_trajectory"
     ct = data.get("career_trajectory")
@@ -134,12 +182,10 @@ def normalize_ai_output(data: dict) -> dict:
 
     return data
 
-async def extract_structured_profile(raw_text: str) -> StructuredProfile:
+async def extract_structured_profile(raw_text: str, llm_provider: IStructuredProvider) -> StructuredProfile:
     """
-    Takes raw resume text and returns a StructuredProfile using local Ollama (phi4-mini).
+    Takes raw resume text and returns a StructuredProfile using local Ollama.
     """
-    ollama = get_ollama_instance()
-    
     messages = [
         {"role": "system", "content": RESUME_EXTRACTION_PROMPT},
         {"role": "user", "content": f"Resume Text:\n{raw_text}"}
@@ -148,8 +194,8 @@ async def extract_structured_profile(raw_text: str) -> StructuredProfile:
     logger.info("[RESUME_ANALYSIS] starting Ollama extraction...")
     
     try:
-        # Use complete_json for robust extraction with Ollama
-        data = await ollama.complete_json(messages, config=RESUME_PARSE)
+        # Use complete_json for robust extraction with Ollama, passing schema
+        data = await llm_provider.complete_json(prompt=messages, schema=StructuredProfile, config=RESUME_PARSE)
         
         # Normalize and Validate
         clean_data = normalize_ai_output(data)

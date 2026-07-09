@@ -26,7 +26,6 @@ class Settings(BaseSettings):
     # SarvamAI
     sarvam_api_key: str
     sarvam_base_url: str = "https://api.sarvam.ai/v1"
-    sarvam_model: str = "sarvam-m"
 
     # Admin
     admin_secret: str

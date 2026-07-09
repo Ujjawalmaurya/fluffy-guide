@@ -1,7 +1,7 @@
 """
 SkillBridge AI — LLM Configuration
 All model configs hardcoded for local hardware optimization.
-Hardware: GTX 1050 Mobile 4GB VRAM → using sub-3GB models for high speed.
+Hardware: GTX 1050 Mobile 4GB/6GB VRAM → using consolidated 2-model split.
 """
 import os
 from dataclasses import dataclass
@@ -10,13 +10,14 @@ from dataclasses import dataclass
 OLLAMA_BASE_URL = os.getenv("OLLAMA_HOST", "http://localhost:11434") + "/v1"
 OLLAMA_API_KEY = "ollama"
 
-# ── Recommended Models (Ranked by Speed/VRAM) ──────────────────
-# 1. qwen2.5:1.5b -> skill extraction, onboarding Q gen, assessment Q gen, job ranking (speed tasks)
-# 2. qwen3:4b -> gap analysis, roadmap generation, career chat (reasoning tasks)
+# ── Consolidated Models ────────────────────────────────────────
+REASONING_MODEL = "qwen3:4b"
+EXTRACTION_MODEL = "qwen2.5:1.5b"
+EMBEDDING_MODEL = "nomic-embed-text:latest"
 
-PRIMARY_MODEL = "qwen3:4b"
-EXTRACTION_MODEL = "qwen2.5:1.5b" 
-EMBEDDINGS_MODEL = "nomic-embed-text:latest"
+# Keep backward-compatibility aliases if any system checks refer to them
+PRIMARY_MODEL = REASONING_MODEL
+EMBEDDINGS_MODEL = EMBEDDING_MODEL
 
 CONCISENESS_INSTRUCTION = "Be concise. Maximum 3 sentences per point. No preamble. No repetition."
 
@@ -48,95 +49,97 @@ class TaskConfig:
     task_name: str
 
 # ── Module-Specific Optimization ──────────────────────────────
+# Extraction-tier calls are capped lower (roughly 200–300 tokens)
+# Reasoning-tier calls are capped higher (roughly 600–800 tokens)
 
-# MODULE 1: Skill Gap Analyzer (num_predict: 150)
+# MODULE 1: Skill Gap Analyzer (Reasoning)
 GAP_ANALYSIS = TaskConfig(
-    model="qwen3:4b", temperature=0.1,
-    max_tokens=150, context_window=1024,
+    model=REASONING_MODEL, temperature=0.1,
+    max_tokens=600, context_window=1024,
     task_name="skill_gap_analysis"
 )
 
-# MODULE 2: Career Recommendation Engine (num_predict: 250)
+# MODULE 2: Career Recommendation Engine (Reasoning)
 CAREER_REC = TaskConfig(
-    model="qwen3:4b", temperature=0.1,
-    max_tokens=250, context_window=1024,
+    model=REASONING_MODEL, temperature=0.1,
+    max_tokens=600, context_window=1024,
     task_name="career_recommendation"
 )
 
-# MODULE 3: Learning Roadmap (num_predict: 2000)
+# MODULE 3: Learning Roadmap (Reasoning)
 ROADMAP = TaskConfig(
-    model="qwen3:4b", temperature=0.1,
-    max_tokens=2000, context_window=4096,
+    model=REASONING_MODEL, temperature=0.1,
+    max_tokens=800, context_window=4096,
     task_name="learning_roadmap"
 )
 
-# MODULE 4: Resume Analyzer (num_predict: 400)
+# MODULE 4: Resume Analyzer (Extraction)
 RESUME_PARSE = TaskConfig(
-    model="qwen2.5:1.5b", temperature=0.1,
-    max_tokens=400, context_window=2048,
+    model=EXTRACTION_MODEL, temperature=0.1,
+    max_tokens=300, context_window=2048,
     task_name="resume_analysis"
 )
 
-# MODULE 5: Interview Questions (num_predict: 400)
+# MODULE 5: Interview Questions (Reasoning)
 MOCK_INTERVIEW = TaskConfig(
-    model="qwen3:4b", temperature=0.4,
-    max_tokens=400, context_window=4096,
+    model=REASONING_MODEL, temperature=0.4,
+    max_tokens=600, context_window=4096,
     task_name="interview_generation"
 )
 
-# MODULE 6: Interview Evaluator (num_predict: 120)
+# MODULE 6: Interview Evaluator (Extraction)
 INTERVIEW_EVAL = TaskConfig(
-    model="qwen2.5:1.5b", temperature=0.1,
-    max_tokens=120, context_window=2048,
+    model=EXTRACTION_MODEL, temperature=0.1,
+    max_tokens=300, context_window=2048,
     task_name="interview_evaluation"
 )
 
-# MODULE 7: Job Match Scorer (num_predict: 150)
+# MODULE 7: Job Match Scorer (Extraction)
 JOB_RANKING = TaskConfig(
-    model="qwen2.5:1.5b", temperature=0.1,
-    max_tokens=150, context_window=2048,
+    model=EXTRACTION_MODEL, temperature=0.1,
+    max_tokens=300, context_window=2048,
     task_name="job_matching"
 )
 
-# MODULE 8: Blue-Collar Guide (num_predict: 200)
+# MODULE 8: Blue-Collar Guide (Reasoning)
 VOCATIONAL_GUIDE = TaskConfig(
-    model="qwen3:4b", temperature=0.1,
-    max_tokens=200, context_window=2048,
+    model=REASONING_MODEL, temperature=0.1,
+    max_tokens=600, context_window=2048,
     task_name="vocational_guidance"
 )
 
-# MODULE 9: Skill Extractor (num_predict: 1000)
+# MODULE 9: Skill Extractor (Extraction)
 SKILL_EXTRACT = TaskConfig(
-    model="qwen2.5:1.5b", temperature=0.0,
-    max_tokens=1000, context_window=4096,
+    model=EXTRACTION_MODEL, temperature=0.0,
+    max_tokens=300, context_window=4096,
     task_name="skill_extraction"
 )
 
-# MODULE 10: Resume Bullet Improver (num_predict: 150)
+# MODULE 10: Resume Bullet Improver (Extraction)
 BULLET_IMPROVE = TaskConfig(
-    model="qwen2.5:1.5b", temperature=0.1,
-    max_tokens=150, context_window=1024,
+    model=EXTRACTION_MODEL, temperature=0.1,
+    max_tokens=300, context_window=1024,
     task_name="bullet_improvement"
 )
 
-# MODULE 11: Adaptive Assessment (num_predict: 200)
+# MODULE 11: Adaptive Assessment (Extraction)
 ASSESSMENT = TaskConfig(
-    model="qwen2.5:1.5b", temperature=0.4,
-    max_tokens=200, context_window=4096,
+    model=EXTRACTION_MODEL, temperature=0.4,
+    max_tokens=300, context_window=4096,
     task_name="adaptive_assessment"
 )
 
-# Legacy / Misc
+# Legacy / Misc (Reasoning)
 CAREER_CHAT = TaskConfig(
-    model="qwen3:4b", temperature=0.85,
-    max_tokens=512, context_window=4096,
+    model=REASONING_MODEL, temperature=0.85,
+    max_tokens=800, context_window=4096,
     task_name="career_guidance_chat"
 )
 
-# MODULE 12: Onboarding Question Generator (num_predict: 800)
+# MODULE 12: Onboarding Question Generator (Extraction)
 ONBOARDING_Q_GEN = TaskConfig(
-    model="qwen2.5:1.5b", temperature=0.7,
-    max_tokens=800, context_window=2048,
+    model=EXTRACTION_MODEL, temperature=0.7,
+    max_tokens=300, context_window=2048,
     task_name="onboarding_question_generation"
 )
 
@@ -160,7 +163,7 @@ LLM_TASKS = {
 
 # ── Runtime Config ────────────────────────────────────────────
 OLLAMA_PARAMS = {
-    "num_ctx": 4096,  # Increased for qwen3:4b
+    "num_ctx": 4096,  # Context size
     "num_predict": 256,
     "temperature": 0.1,
     "top_p": 0.9,
@@ -171,5 +174,4 @@ OLLAMA_PARAMS = {
 
 MAX_RETRIES = 2
 RETRY_DELAY = 1.0
-HEALTH_MODEL = PRIMARY_MODEL
-
+HEALTH_MODEL = REASONING_MODEL

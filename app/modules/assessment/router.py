@@ -3,20 +3,19 @@ from typing import List
 from fastapi import APIRouter, Depends
 from app.modules.assessment.service import AssessmentService
 from app.modules.assessment.repository import AssessmentRepository
-from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
 from app.schemas.request.assessment import AssessmentAnswerRequest
 from app.schemas.response.assessment import (
     StartAssessmentResponse, AnswerResponse, 
     AssessmentStatusResponse, AssessmentHistoryItem
 )
-from app.shared.dependencies import get_current_user, get_db
+from app.shared.dependencies import get_current_user, get_db, get_structured_provider
 from app.shared.response_models import APIResponse, ok
 from app.core.logger import get_logger
 
 logger = get_logger("ASSESSMENT_ROUTER")
 router = APIRouter(prefix="/assessment", tags=["Assessment"])
 
-def get_assessment_service(db=Depends(get_db), llm=Depends(get_ollama_instance)):
+def get_assessment_service(db=Depends(get_db), llm=Depends(get_structured_provider)):
     return AssessmentService(AssessmentRepository(db), llm_provider=llm)
 
 async def _get_user_profile(user_id: str, repo: AssessmentRepository) -> dict:

@@ -92,9 +92,15 @@ async def get_admin(x_admin_secret: str = Header(None)) -> bool:
 
 
 from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
-from app.modules.ai_chat.providers.base import ILLMProvider
+from app.modules.ai_chat.providers.base import ICompletionProvider, IStructuredProvider
 
 
-def get_llm_provider() -> ILLMProvider:
-    """Returns the standardized LLM provider instance."""
+def get_completion_provider() -> ICompletionProvider:
+    """Returns the completion (reasoning) LLM provider instance."""
     return get_ollama_instance()
+
+
+def get_structured_provider() -> IStructuredProvider:
+    """Returns the structured (extraction) LLM provider instance."""
+    return get_ollama_instance()
+

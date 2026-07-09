@@ -5,11 +5,13 @@ from services.pdf_extractor import extract_resume_text
 from services.resume_extractor import extract_structured_profile
 from services.resume_scorer import calculate_quality_scores
 from services.resume_suggester import generate_suggestions
-# from app.core.database import supabase # If we were saving, but user didn't ask yet
+from app.modules.ai_chat.providers.base import IStructuredProvider, ICompletionProvider
 
 async def analyze_resume_pipeline(
     user_id: str,
     file_content: bytes,
+    structured_provider: IStructuredProvider,
+    completion_provider: ICompletionProvider,
     target_role: Optional[str] = None
 ) -> ResumeAnalysisResult:
     """
@@ -27,7 +29,7 @@ async def analyze_resume_pipeline(
 
     # 2. AI Structured Extraction (Fail-safe)
     # The extractor now returns a default StructuredProfile() on failure
-    profile = await extract_structured_profile(raw_text)
+    profile = await extract_structured_profile(raw_text, structured_provider)
     
     # 3. Rule-based Scoring
     try:
@@ -39,7 +41,13 @@ async def analyze_resume_pipeline(
 
     # 4. Suggestion Generation
     try:
-        suggestions = await generate_suggestions(profile, quality_scores, target_role)
+        suggestions = await generate_suggestions(
+            profile,
+            quality_scores,
+            structured_provider,
+            completion_provider,
+            target_role
+        )
     except Exception as e:
         logger.error(f"[RESUME_ORCHESTRATOR] Suggestion generation failed: {e}")
         from models.resume_analysis_models import SuggestionSet

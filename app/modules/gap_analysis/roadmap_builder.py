@@ -68,11 +68,13 @@ def _strip_fences(text: str) -> str:
         text = "\n".join(lines)
     return text.strip()
 
+from app.modules.ai_chat.providers.base import IStructuredProvider
+
 async def build_roadmap(
     user_id: str,
     gaps: list,
     user_profile_data: dict,
-    llm_provider
+    llm_provider: IStructuredProvider
 ) -> tuple[dict, list]:
     """
     Fetches matching resources for top 5 gaps, then calls

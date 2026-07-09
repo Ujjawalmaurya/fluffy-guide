@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from app.modules.dashboard.service import DashboardService
 from app.modules.dashboard.repository import DashboardRepository
 from app.schemas.response.user import UserDashboardResponse
-from app.shared.dependencies import get_db, get_current_user, require_user_type, get_llm_provider
+from app.shared.dependencies import get_db, get_current_user, require_user_type, get_structured_provider
 from app.shared.response_models import ok, APIResponse
 
 router = APIRouter(tags=["dashboard"])
@@ -12,7 +12,7 @@ router = APIRouter(tags=["dashboard"])
 
 def _get_service(
     db=Depends(get_db), 
-    provider=Depends(get_llm_provider)
+    provider=Depends(get_structured_provider)
 ) -> DashboardService:
     return DashboardService(DashboardRepository(db), provider)
 

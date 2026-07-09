@@ -7,14 +7,14 @@ from app.schemas.request.profile import ProfileUpdateRequest
 from app.schemas.response.profile import (
     ProfileResponse, ParsedResumeResponse, CompletionScoreResponse
 )
-from app.shared.dependencies import get_db, get_current_user
+from app.shared.dependencies import get_db, get_current_user, get_structured_provider
 from app.shared.response_models import ok, APIResponse
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
 
-def _get_service(db=Depends(get_db)) -> ProfileService:
-    return ProfileService(ProfileRepository(db))
+def _get_service(db=Depends(get_db), llm=Depends(get_structured_provider)) -> ProfileService:
+    return ProfileService(ProfileRepository(db), llm)
 
 
 @router.get("/me", response_model=APIResponse[ProfileResponse])

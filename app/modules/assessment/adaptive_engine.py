@@ -1,5 +1,5 @@
 import json
-from app.modules.ai_chat.providers.base import ILLMProvider
+from app.modules.ai_chat.providers.base import IStructuredProvider
 from app.modules.assessment.phase_config import (
   get_phase_for_question, get_phase_config, PHASE_QUESTION_RANGES
 )
@@ -156,7 +156,7 @@ def format_qa_pairs(conversation_history: list) -> str:
 async def generate_next_question(
   session: dict,
   user_profile: dict,
-  llm_provider: ILLMProvider
+  llm_provider: IStructuredProvider
 ) -> dict:
   """Generates the next batch of adaptive questions using LLM."""
   current_q_count = session.get("current_question_number", 0)
@@ -225,7 +225,7 @@ async def generate_next_question(
 async def extract_skills_from_session(
   session: dict,
   user_profile: dict,
-  llm_provider: ILLMProvider
+  llm_provider: IStructuredProvider
 ) -> dict:
   """Uses LLM for skill extraction from completed assessment."""
   conversation_history = session.get("adaptive_context", [])

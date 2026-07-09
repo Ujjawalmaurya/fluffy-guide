@@ -5,7 +5,7 @@ from app.modules.assessment.repository import AssessmentRepository
 from app.modules.assessment import adaptive_engine
 from app.modules.skill_profile import aggregator as skill_aggregator
 from app.modules.skill_profile.repository import SkillProfileRepository
-from app.modules.ai_chat.providers.base import ILLMProvider
+from app.modules.ai_chat.providers.base import IStructuredProvider
 from app.core.logger import get_logger
 from app.core.config import settings
 from app.shared.exceptions import AppError
@@ -24,7 +24,7 @@ def _utcnow():
     return datetime.now(timezone.utc)
 
 class AssessmentService:
-    def __init__(self, repo: AssessmentRepository, llm_provider: ILLMProvider):
+    def __init__(self, repo: AssessmentRepository, llm_provider: IStructuredProvider):
         self.repo = repo
         self.llm_provider = llm_provider
 

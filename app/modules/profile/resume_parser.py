@@ -10,7 +10,7 @@ from pydantic import Field
 from app.schemas.base import BaseSchema
 from app.schemas.enums import EducationLevel
 
-from app.modules.ai_chat.providers.base import ILLMProvider
+from app.modules.ai_chat.providers.base import IStructuredProvider
 from app.shared.exceptions import ResumeNoText, AppError
 from services.pdf_extractor import extract_resume_text
 from app.core import llm_config
@@ -87,7 +87,7 @@ Generate JSON now."""
 
 
 async def parse_resume(file_bytes: bytes, filename: str, content_type: str, user_id: str,
-                       llm_provider: ILLMProvider) -> dict:
+                       llm_provider: IStructuredProvider) -> dict:
     
     logger.info(f"[RESUME_PARSER] Processing user={user_id} file={filename}")
     text = ""

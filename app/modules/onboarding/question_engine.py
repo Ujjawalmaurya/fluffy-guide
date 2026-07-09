@@ -4,7 +4,7 @@ Isolated here so question format can change without touching service.py.
 """
 from app.core.logger import get_logger
 from app.core import llm_config
-from app.modules.ai_chat.providers.base import ILLMProvider
+from app.modules.ai_chat.providers.base import IStructuredProvider
 
 log = get_logger("ONBOARDING")
 
@@ -63,7 +63,7 @@ Generate 6 questions now."""
 
 
 async def generate_questions(
-    llm_provider: ILLMProvider,
+    llm_provider: IStructuredProvider,
     user_type: str, 
     state: str, 
     career_interests: list[str], 

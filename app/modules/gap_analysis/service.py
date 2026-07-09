@@ -24,6 +24,9 @@ async def get_or_compute_report(
         - Report is marked stale
         - Profile hash has changed since last computation
     """
+    if llm_provider is None:
+        from app.shared.dependencies import get_structured_provider
+        llm_provider = get_structured_provider()
     current_hash = await profile_hasher.compute_hash(user_id)
     existing = await repository.get_by_user_id(user_id)
 

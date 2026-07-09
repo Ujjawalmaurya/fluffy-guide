@@ -17,14 +17,13 @@ from app.schemas.response.onboarding import (
 from app.modules.onboarding.service import OnboardingService
 from app.modules.onboarding.repository import OnboardingRepository
 from app.modules.onboarding.sse_processor import process_stream
-from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
-from app.shared.dependencies import get_db, get_current_user
+from app.shared.dependencies import get_db, get_current_user, get_structured_provider
 from app.shared.response_models import ok, APIResponse
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
 
-def _get_service(db=Depends(get_db), llm=Depends(get_ollama_instance)) -> OnboardingService:
+def _get_service(db=Depends(get_db), llm=Depends(get_structured_provider)) -> OnboardingService:
     return OnboardingService(OnboardingRepository(db), llm)
 
 

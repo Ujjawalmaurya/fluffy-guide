@@ -9,7 +9,7 @@ from app.schemas.request.chat import ChatRequest
 from app.schemas.response.chat import ChatMessageResponse
 from app.modules.ai_chat.service import ChatService
 from app.modules.ai_chat.repository import ChatRepository
-from app.shared.dependencies import get_db, get_current_user, get_llm_provider
+from app.shared.dependencies import get_db, get_current_user, get_completion_provider
 from app.shared.response_models import ok, APIResponse
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 def _get_service(
     db=Depends(get_db), 
-    provider=Depends(get_llm_provider)
+    provider=Depends(get_completion_provider)
 ) -> ChatService:
     return ChatService(ChatRepository(db), provider)
 

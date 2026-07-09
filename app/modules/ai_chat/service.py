@@ -1,7 +1,6 @@
 from typing import AsyncGenerator
 
-from app.modules.ai_chat.providers.base import ILLMProvider
-from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
+from app.modules.ai_chat.providers.base import ICompletionProvider
 from app.modules.ai_chat.repository import ChatRepository
 from app.modules.ai_chat.context_builder import build_context_json
 from app.modules.ai_chat.prompts import build_system_prompt
@@ -11,7 +10,7 @@ log = get_logger("AI_CHAT")
 
 
 class ChatService:
-    def __init__(self, repo: ChatRepository, provider: ILLMProvider):
+    def __init__(self, repo: ChatRepository, provider: ICompletionProvider):
         self.repo = repo
         self.provider = provider
 
@@ -68,7 +67,7 @@ class ChatService:
         full_response = []
         
         from app.core import llm_config
-        async for token in self.provider.stream(messages, language, config=llm_config.CAREER_CHAT):
+        async for token in self.provider.stream(messages, language=language, config=llm_config.CAREER_CHAT):
             full_response.append(token)
             yield token
 

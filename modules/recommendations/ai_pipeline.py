@@ -2,7 +2,7 @@
 from typing import List, Dict
 
 class RecommendationAIPipeline:
-    def __init__(self, model_name: str = "qwen2.5:0.5b"):
+    def __init__(self, model_name: str = "qwen2.5:1.5b"):
         self.model_name = model_name
 
     async def rank_jobs_with_llm(self, user_profile: dict, candidate_jobs: List[dict]) -> List[dict]:

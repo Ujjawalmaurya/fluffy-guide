@@ -5,7 +5,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
 from loguru import logger
 
-from app.shared.dependencies import get_current_user, get_db
+from app.shared.dependencies import get_current_user, get_db, get_structured_provider, get_completion_provider
+from app.modules.ai_chat.providers.base import IStructuredProvider, ICompletionProvider
 from app.core.config import settings
 from models.resume_analysis_models import ResumeAnalysisResult, BulletImprovement, ImproveBulletRequest
 from services.resume_analysis_orchestrator import analyze_resume_pipeline
@@ -64,7 +65,9 @@ async def increment_rate_limit(user_id: str, db):
 async def analyze_resume(
     file: UploadFile = File(...),
     target_role: Optional[str] = Form(None),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    structured_provider: IStructuredProvider = Depends(get_structured_provider),
+    completion_provider: ICompletionProvider = Depends(get_completion_provider)
 ):
     """
     Analyzes a PDF resume and returns a detailed structured report.
@@ -84,6 +87,8 @@ async def analyze_resume(
         result = await analyze_resume_pipeline(
             user_id=current_user["id"],
             file_content=content,
+            structured_provider=structured_provider,
+            completion_provider=completion_provider,
             target_role=target_role
         )
         
@@ -125,10 +130,11 @@ async def get_score_breakdown(current_user: dict = Depends(get_current_user), db
 async def improve_single_bullet(
     request: ImproveBulletRequest,
     current_user: dict = Depends(get_current_user),
-    db=Depends(get_db)
+    db=Depends(get_db),
+    structured_provider: IStructuredProvider = Depends(get_structured_provider)
 ):
     """
-    Improves a single bullet point using Groq. Rate limited.
+    Improves a single bullet point. Rate limited.
     """
     allowed = await check_rate_limit(current_user["id"], db)
     if not allowed:
@@ -137,7 +143,7 @@ async def improve_single_bullet(
             detail=f"Daily limit of {settings.resume_bullet_daily_limit} improvements reached. Try again tomorrow."
         )
         
-    improvement = await improve_bullet_via_groq(request.bullet, request.target_role)
+    improvement = await improve_bullet_via_groq(request.bullet, structured_provider, request.target_role)
     
     # Increment counter
     await increment_rate_limit(current_user["id"], db)

@@ -4,7 +4,7 @@ import asyncio
 from typing import List, Dict, Optional
 from loguru import logger
 from app.core.config import settings
-from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
+from app.modules.ai_chat.providers.base import IStructuredProvider, ICompletionProvider
 from app.core.llm_config import CAREER_CHAT, BULLET_IMPROVE
 from models.resume_analysis_models import (
     StructuredProfile, QualityScores, SuggestionSet, BulletImprovement
@@ -27,12 +27,10 @@ WEAK_PHRASING_MAP = {
     "driving": "Commercial Vehicle Operation",
 }
 
-async def improve_bullet_via_llm(bullet: str, role: Optional[str] = None) -> BulletImprovement:
+async def improve_bullet_via_llm(bullet: str, llm_provider: IStructuredProvider, role: Optional[str] = None) -> BulletImprovement:
     """
     Uses local Ollama to improve a single bullet point.
     """
-    ollama = get_ollama_instance()
-    
     system_msg = (
         "You are a resume expert. Improve this weak resume bullet into a strong "
         "achievement-oriented bullet. Add realistic metrics if missing. Keep it under 20 words. "
@@ -41,10 +39,11 @@ async def improve_bullet_via_llm(bullet: str, role: Optional[str] = None) -> Bul
     user_msg = f"Original bullet: {bullet}. Role context: {role if role else 'General'}"
     
     try:
-        content = await ollama.complete_json([
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg}
-        ], config=BULLET_IMPROVE)
+        content = await llm_provider.complete_json(
+            prompt=user_msg,
+            system_prompt=system_msg,
+            config=BULLET_IMPROVE
+        )
         
         return BulletImprovement(
             original=bullet,
@@ -58,12 +57,10 @@ async def improve_bullet_via_llm(bullet: str, role: Optional[str] = None) -> Bul
 # Alias for backward compatibility if needed, though we should update callers
 improve_bullet_via_groq = improve_bullet_via_llm
 
-async def generate_summary_via_llm(profile: StructuredProfile, target_role: Optional[str] = None) -> str:
+async def generate_summary_via_llm(profile: StructuredProfile, llm_provider: ICompletionProvider, target_role: Optional[str] = None) -> str:
     """
     Uses local Ollama to generate a professional summary.
     """
-    ollama = get_ollama_instance()
-    
     name = profile.full_name or "Professional"
     # skills is now a list of Skill objects
     skills_list = [s.name if hasattr(s, 'name') else str(s) for s in profile.skills[:5]]
@@ -80,7 +77,7 @@ async def generate_summary_via_llm(profile: StructuredProfile, target_role: Opti
     )
     
     try:
-        summary = await ollama.complete([{"role": "user", "content": prompt}], config=CAREER_CHAT)
+        summary = await llm_provider.complete(prompt, config=CAREER_CHAT)
         return summary.strip()
     except Exception as e:
         logger.error(f"[RESUME_ANALYSIS] Summary generation failed: {str(e)}")
@@ -92,6 +89,8 @@ generate_summary_via_gemini = generate_summary_via_llm
 async def generate_suggestions(
     profile: StructuredProfile,
     quality_scores: QualityScores,
+    structured_provider: IStructuredProvider,
+    completion_provider: ICompletionProvider,
     target_role: Optional[str] = None
 ) -> SuggestionSet:
     """
@@ -109,13 +108,13 @@ async def generate_suggestions(
     all_weak_bullets.sort(key=lambda x: len(x[0]))
     worst_bullets = all_weak_bullets[:5]
     
-    # Step B - Improve bullets via Groq
+    # Step B - Improve bullets
     bullet_improvements = await asyncio.gather(*[
-        improve_bullet_via_groq(bullet, role) for bullet, role in worst_bullets
+        improve_bullet_via_groq(bullet, structured_provider, role) for bullet, role in worst_bullets
     ])
     
-    # Step C - Summary via Gemini
-    summary = await generate_summary_via_gemini(profile, target_role)
+    # Step C - Summary
+    summary = await generate_summary_via_gemini(profile, completion_provider, target_role)
     
     # Step D - Transferable skills (rule-based)
     detected_transferable = []

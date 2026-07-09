@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.core.database import test_connection
 from app.core.logger import get_logger
 from app.shared.exceptions import register_exception_handlers
-from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
+from app.shared.dependencies import get_completion_provider
 from app.core.llm_config import PRIMARY_MODEL, EXTRACTION_MODEL
 
 from app.modules.auth.router import router as auth_router
@@ -70,7 +70,7 @@ async def startup():
         log.info("All systems go. Ready to serve requests.")
 
     # Ollama Health Check
-    ollama = get_ollama_instance()
+    ollama = get_completion_provider()
     health = await ollama.health_check()
 
     if health["status"] != "healthy":

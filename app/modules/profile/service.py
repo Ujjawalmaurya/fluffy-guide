@@ -15,9 +15,12 @@ MAX_RESUME_SIZE = 5 * 1024 * 1024  # 5MB
 COMPLETION_FIELDS = ["full_name", "age", "gender", "state", "city", "education_level", "languages", "phone"]
 
 
+from app.modules.ai_chat.providers.base import IStructuredProvider
+
 class ProfileService:
-    def __init__(self, repo: ProfileRepository):
+    def __init__(self, repo: ProfileRepository, llm: IStructuredProvider):
         self.repo = repo
+        self.llm = llm
 
     def get_profile(self, user_id: str) -> dict:
         profile = self.repo.get_profile(user_id)
@@ -49,9 +52,7 @@ class ProfileService:
             log.warning(f"Could not set initial status to processing for user={user_id}: {e}")
 
         try:
-            from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
-            ollama = get_ollama_instance()
-            result = await parse_resume(file_bytes, filename, content_type, user_id, ollama)
+            result = await parse_resume(file_bytes, filename, content_type, user_id, self.llm)
         except Exception as e:
             log.error(f"Resume parsing failed for user={user_id}: {e}")
             self.repo.update_enrichment_status(user_id, "failed")
