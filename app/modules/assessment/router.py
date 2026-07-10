@@ -20,7 +20,24 @@ def get_assessment_service(db=Depends(get_db), llm=Depends(get_structured_provid
 
 async def _get_user_profile(user_id: str, repo: AssessmentRepository) -> dict:
     data = await repo.get_user_profile_and_prefs(user_id)
-    return {**data["profile"], **data["preferences"], "user_id": user_id}
+    user_data = data.get("user") or {}
+    profile_data = data.get("profile") or {}
+    prefs_data = data.get("preferences") or {}
+    enrich_data = data.get("enrichment") or {}
+    
+    parsed_resume = enrich_data.get("resume_parsed") or enrich_data.get("gemini_extracted") or {}
+    primary_role = parsed_resume.get("primary_role") or ""
+    resume_skills = [s.get("name", s) if isinstance(s, dict) else s for s in parsed_resume.get("skills", [])]
+    
+    return {
+        **profile_data,
+        **prefs_data,
+        "user_id": user_id,
+        "user_type": user_data.get("user_type", "individual"),
+        "preferred_lang": user_data.get("preferred_lang", "en"),
+        "primary_role": primary_role,
+        "resume_skills": resume_skills
+    }
 
 @router.post("/start", response_model=APIResponse[StartAssessmentResponse])
 async def start_assessment(
@@ -29,6 +46,15 @@ async def start_assessment(
 ):
     user_profile = await _get_user_profile(current_user["id"], service.repo)
     result = await service.start_assessment(user_id=current_user["id"], user_profile=user_profile)
+    return ok(data=result)
+
+@router.post("/restart", response_model=APIResponse[StartAssessmentResponse])
+async def restart_assessment(
+    current_user: dict = Depends(get_current_user),
+    service: AssessmentService = Depends(get_assessment_service)
+):
+    user_profile = await _get_user_profile(current_user["id"], service.repo)
+    result = await service.restart_assessment(user_id=current_user["id"], user_profile=user_profile)
     return ok(data=result)
 
 @router.post("/answer", response_model=APIResponse[AnswerResponse])

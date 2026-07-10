@@ -14,6 +14,7 @@ logger = get_logger("ASSESSMENT")
 
 QUESTION_SYSTEM_PROMPT = """ROLE: You are SkillBridge AI, a sharp, empathetic career mentor.
 Speaking with a {user_type} from {state}, education: {education_level}.
+{background_context}
 
 TASK: Generate EXACTLY {batch_size} distinct assessment questions to map their skill depth.
 
@@ -46,6 +47,7 @@ RULES:
 - 3-8 short chips. Use "Other" (allows_other: true) for free-form depth.
 - Use {language} language.
 - Never repeat a topic from 'Probed Topics'.
+- **NO PARROTING**: Do not use the user's previous answers as the choices/options in subsequent questions. Options should provide new alternatives, tools, or concepts to select from.
 - **DIFFICULTY**: If they answer confidently, push deeper. If they struggle, simplify.
 - **VARIETY**: Mix MCQ with single-choice. Avoid predictable patterns.
 - Be creative. Don't sound like a bureaucrat.
@@ -61,6 +63,7 @@ USER PROFILE:
 - Type: {user_type}
 - State: {state}
 - Education: {education_level}
+{background_context}
 
 JSON STRUCTURE:
 {{
@@ -151,6 +154,34 @@ def format_qa_pairs(conversation_history: list) -> str:
       last_questions = []
   return "\n\n".join(pairs) if pairs else "No answers recorded."
 
+
+def _get_background_context(user_profile: dict) -> str:
+  """Builds a clean background context string from profile data to supply to prompt."""
+  parts = []
+  
+  # Role / Trade
+  role = user_profile.get("primary_role") or user_profile.get("primary_trade") or user_profile.get("current_work_type")
+  if role:
+    parts.append(f"- Role/Trade of Interest: {role}")
+    
+  # Resume skills / interests
+  resume_skills = user_profile.get("resume_skills")
+  if resume_skills:
+    skills_str = ", ".join(resume_skills) if isinstance(resume_skills, list) else str(resume_skills)
+    parts.append(f"- Known Skills: {skills_str}")
+    
+  # General career interests
+  interests = user_profile.get("career_interests") or user_profile.get("target_roles") or user_profile.get("interests")
+  if interests:
+    interests_str = ", ".join(interests) if isinstance(interests, list) else str(interests)
+    parts.append(f"- Career Interests: {interests_str}")
+    
+  if not parts:
+    return ""
+    
+  return "\nBACKGROUND CONTEXT:\n" + "\n".join(parts)
+
+
 # ── Core Functions ────────────────────────────────────────────────
 
 async def generate_next_question(
@@ -189,6 +220,7 @@ async def generate_next_question(
     covered_topics=covered_topics,
     phase_number=phase_num,
     batch_size=batch_size,
+    background_context=_get_background_context(user_profile),
     CONCISENESS_INSTRUCTION=CONCISENESS_INSTRUCTION
   )
 
@@ -234,7 +266,9 @@ async def extract_skills_from_session(
   system_prompt = SKILL_EXTRACTION_SYSTEM_PROMPT.format(
     user_type=user_profile.get("user_type", "individual"),
     state=user_profile.get("state", "India"),
-    education_level=user_profile.get("education_level", "not specified")
+    education_level=user_profile.get("education_level", "not specified"),
+    background_context=_get_background_context(user_profile),
+    CONCISENESS_INSTRUCTION=CONCISENESS_INSTRUCTION
   )
 
   user_prompt = f"ASSESSMENT QA PAIRS:\n{qa_pairs}\n\nExtract insights now."

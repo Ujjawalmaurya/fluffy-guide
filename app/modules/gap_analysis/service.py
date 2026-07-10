@@ -1,11 +1,12 @@
 # [GAP_ANALYSIS] Cache logic and report orchestration.
 # Returns cached report if fresh. Recomputes only when needed.
 
+import asyncio
 from datetime import datetime, timezone
 from app.modules.gap_analysis import (
     gap_engine, roadmap_builder, repository, profile_hasher
 )
-from app.core.database import get_supabase
+from app.core.database import get_async_supabase
 from app.core.logger import get_logger
 
 logger = get_logger("GAP_ANALYSIS")
@@ -60,22 +61,21 @@ async def get_or_compute_report(
     # Compute gap (no LLM)
     gap_data = await gap_engine.compute_gap(user_id)
 
-    # Fetch combined user profile for roadmap context
-    db = get_supabase()
-    user_row = db.table("users").select(
-        "user_type, preferred_lang"
-    ).eq("id", user_id).limit(1).execute()
-    profile_row = db.table("user_profiles").select(
-        "full_name, state"
-    ).eq("user_id", user_id).limit(1).execute()
-    prefs_row = db.table("user_preferences").select(
-        "career_interests"
-    ).eq("user_id", user_id).limit(1).execute()
+    # Fetch combined user profile for roadmap context concurrently using native async calls
+    db = await get_async_supabase()
+
+    user_task = db.table("users").select("user_type, preferred_lang").eq("id", user_id).limit(1).execute()
+    profile_task = db.table("user_profiles").select("full_name, state").eq("user_id", user_id).limit(1).execute()
+    prefs_task = db.table("user_preferences").select("career_interests").eq("user_id", user_id).limit(1).execute()
+
+    user_res, profile_res, prefs_res = await asyncio.gather(
+        user_task, profile_task, prefs_task
+    )
 
     user_profile_data = {
-        **(user_row.data[0] if user_row.data else {}),
-        **(profile_row.data[0] if profile_row.data else {}),
-        **(prefs_row.data[0] if prefs_row.data else {})
+        **(user_res.data[0] if user_res.data else {}),
+        **(profile_res.data[0] if profile_res.data else {}),
+        **(prefs_res.data[0] if prefs_res.data else {})
     }
 
     # Build roadmap (LLM call) only if we have gaps

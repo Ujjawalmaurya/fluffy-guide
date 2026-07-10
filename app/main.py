@@ -75,7 +75,7 @@ async def startup():
 
     if health["status"] != "healthy":
         log.critical(
-            "[STARTUP] ✗ OLLAMA_NOT_RUNNING | "
+            "[STARTUP] [ERR] OLLAMA_NOT_RUNNING | "
             f"fix: run 'ollama serve' then "
             f"'ollama pull {PRIMARY_MODEL}' && "
             f"'ollama pull {EXTRACTION_MODEL}'"
@@ -86,12 +86,12 @@ async def startup():
                    if not any(m in a for a in available)]
         if missing:
             log.warning(
-                f"[STARTUP] ⚠ MODELS_MISSING | missing={missing} | "
+                f"[STARTUP] [WARN] MODELS_MISSING | missing={missing} | "
                 f"fix: ollama pull {' && ollama pull '.join(missing)}"
             )
         else:
             log.info(
-                f"[STARTUP] ✓ OLLAMA_READY | "
+                f"[STARTUP] [OK] OLLAMA_READY | "
                 f"primary={PRIMARY_MODEL} | extraction={EXTRACTION_MODEL}"
             )
 

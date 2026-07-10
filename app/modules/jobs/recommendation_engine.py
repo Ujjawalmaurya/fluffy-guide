@@ -112,7 +112,7 @@ class JobRecommendationEngine:
                         {"role": "user", "content": user_prompt}
                     ],
                     config=llm_config.JOB_RANKING,
-                    timeout=4.0
+                    timeout=15.0
                 )
                 
                 # Ensure ranked_data is a list
@@ -123,7 +123,17 @@ class JobRecommendationEngine:
                             ranked_data = ranked_data[key]
                             break
                     if isinstance(ranked_data, dict): # Still a dict?
-                        ranked_data = [ranked_data] # Wrap it
+                        # Handle case where keys are job IDs mapping to details/scores
+                        normalized = []
+                        for k, v in ranked_data.items():
+                            if isinstance(v, dict):
+                                item = v.copy()
+                                if "id" not in item:
+                                    item["id"] = k
+                                normalized.append(item)
+                            elif isinstance(v, (int, float)):
+                                normalized.append({"id": k, "match_score": int(v), "reason": "Matches your profile."})
+                        ranked_data = normalized
                 
                 if not isinstance(ranked_data, list):
                     logger.warning(f"[JOB_ENGINE] LLM returned non-list data: {type(ranked_data)}. Falling back.")

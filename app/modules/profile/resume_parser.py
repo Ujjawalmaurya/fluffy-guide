@@ -109,9 +109,9 @@ async def parse_resume(file_bytes: bytes, filename: str, content_type: str, user
         logger.warning(f"[RESUME_PARSER] Minimal text found for user={user_id}")
         raise ResumeNoText()
         
-    # Token optimization: 3000 chars is ~750 tokens, perfect for fast inference
-    if len(text) > 3000:
-        text = text[:3000]
+    # Token optimization: 10000 chars fits well in 4096 context window
+    if len(text) > 10000:
+        text = text[:10000]
         
     user_prompt = RESUME_USER_PROMPT.format(resume_text=text)
     
@@ -143,10 +143,23 @@ async def parse_resume(file_bytes: bytes, filename: str, content_type: str, user
 
             # Fix Education: Ensure 'level' is present and valid
             if isinstance(parsed_dict.get("education"), list):
-                valid_levels = ["undergraduate", "postgraduate", "diploma", "phd"]
+                level_map = {
+                    "undergraduate": "graduate",
+                    "bachelors": "graduate",
+                    "bachelor": "graduate",
+                    "diploma": "vocational",
+                    "phd": "postgraduate",
+                    "doctoral": "postgraduate",
+                    "doctorate": "postgraduate",
+                }
+                valid_levels = {level.value for level in EducationLevel}
                 for edu in parsed_dict["education"]:
-                    if not edu.get("level") or str(edu.get("level")).lower() not in valid_levels:
-                        edu["level"] = "undergraduate" # Default fallback
+                    lvl = str(edu.get("level") or "").lower().strip()
+                    if lvl in level_map:
+                        lvl = level_map[lvl]
+                    if lvl not in valid_levels:
+                        lvl = "graduate" # Default fallback
+                    edu["level"] = lvl
 
             # Fix Experience: Ensure lists exist
             if isinstance(parsed_dict.get("experience"), list):

@@ -17,7 +17,7 @@ def _get_service(
     return DashboardService(DashboardRepository(db), provider)
 
 
-@router.get("/dashboard/summary", response_model=APIResponse[UserDashboardResponse])
+@router.get("/dashboard/summary", response_model=APIResponse)
 async def get_summary(
     current_user: dict = Depends(get_current_user),
     service: DashboardService = Depends(_get_service),

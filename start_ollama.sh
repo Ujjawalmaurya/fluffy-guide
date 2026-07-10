@@ -1,6 +1,6 @@
 #!/bin/bash
 # Persistent Ollama startup script for SkillBridge AI
-# Optimized for GTX 1050 (4GB VRAM) with Vulkan
+# Optimized for RTX 4050 (6GB VRAM) with Vulkan
 
 export OLLAMA_VULKAN=1
 export OLLAMA_DEBUG=0

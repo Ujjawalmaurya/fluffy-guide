@@ -1,6 +1,6 @@
 """
 Ollama Provider — Local LLM implementation using OpenAI-compatible API.
-Hardware: GTX 1050 Mobile 4GB/6GB VRAM.
+Hardware: RTX 4050 6GB VRAM.
 Models: qwen3:4b (Reasoning), qwen2.5:1.5b (Extraction).
 """
 import time
@@ -102,7 +102,7 @@ class OllamaProvider(ICompletionProvider, IStructuredProvider):
             "num_predict": max_tokens,
             "temperature": kwargs.get("temperature", task_config.temperature if task_config else options["temperature"]),
             "num_gpu": 999, # Explicitly force GPU layers
-            "low_vram": True # Help with GTX 1050
+            # "low_vram": True # Help with RTX 4050
         })
         
         extra_body = {
@@ -138,7 +138,7 @@ class OllamaProvider(ICompletionProvider, IStructuredProvider):
             
             # Extract reasoning/thinking tokens if present
             reasoning = getattr(message, "reasoning", None) or getattr(message, "reasoning_content", None) or ""
-            if reasoning:
+            if reasoning and not kwargs.get("json_mode"):
                 reasoning = reasoning.strip()
                 if reasoning:
                     if content:
@@ -245,9 +245,9 @@ class OllamaProvider(ICompletionProvider, IStructuredProvider):
                 # Force JSON mode for Ollama
                 response_text = await self.complete(
                     prompt=local_messages, 
-                    json_mode=True, 
                     config=task_config,
                     model=current_model,
+                    json_mode=True,
                     **kwargs
                 )
                 if not response_text:

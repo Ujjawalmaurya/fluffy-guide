@@ -1,8 +1,9 @@
 # [GAP_ANALYSIS] Computes a SHA256 hash of the user's current
 # profile state. When hash changes, cached report is marked stale.
 
+import asyncio
 import hashlib
-from app.core.database import get_supabase
+from app.core.database import get_async_supabase
 from app.core.logger import get_logger
 
 logger = get_logger("GAP_ANALYSIS")
@@ -14,28 +15,12 @@ async def compute_hash(user_id: str) -> str:
                  last assessment timestamp + preferences timestamp.
     Any change in these = different hash = stale report.
     """
-    db = get_supabase()
+    db = await get_async_supabase()
 
-    # Fetch skill names
-    skills_result = db.table("user_skill_profiles").select(
-        "skills"
-    ).eq("user_id", user_id).limit(1).execute()
-    skills = skills_result.data[0]["skills"] if skills_result.data and skills_result.data[0].get("skills") else []
-    skill_names = sorted([
-        s["skill_name"].lower() for s in skills if "skill_name" in s
-    ])
-
-    # Fetch resume timestamp
-    resume_result = db.table("profile_enrichments").select(
-        "resume_uploaded_at"
-    ).eq("user_id", user_id).limit(1).execute()
-    resume_at = str(
-        resume_result.data[0].get("resume_uploaded_at", "")
-        if resume_result.data else ""
-    )
-
-    # Fetch last assessment timestamp
-    session_result = (
+    # Execute all 4 queries concurrently using native async calls
+    skills_task = db.table("user_skill_profiles").select("skills").eq("user_id", user_id).limit(1).execute()
+    resume_task = db.table("profile_enrichments").select("resume_uploaded_at").eq("user_id", user_id).limit(1).execute()
+    session_task = (
         db.table("questionnaire_sessions")
         .select("completed_at")
         .eq("user_id", user_id)
@@ -45,15 +30,27 @@ async def compute_hash(user_id: str) -> str:
         .limit(1)
         .execute()
     )
+    prefs_task = db.table("user_preferences").select("updated_at").eq("user_id", user_id).limit(1).execute()
+
+    skills_result, resume_result, session_result, prefs_result = await asyncio.gather(
+        skills_task, resume_task, session_task, prefs_task
+    )
+
+    skills = skills_result.data[0]["skills"] if skills_result.data and skills_result.data[0].get("skills") else []
+    skill_names = sorted([
+        s["skill_name"].lower() for s in skills if "skill_name" in s
+    ])
+
+    resume_at = str(
+        resume_result.data[0].get("resume_uploaded_at", "")
+        if resume_result.data else ""
+    )
+
     assessment_at = str(
         session_result.data[0].get("completed_at", "")
         if session_result.data else ""
     )
 
-    # Fetch preferences timestamp
-    prefs_result = db.table("user_preferences").select(
-        "updated_at"
-    ).eq("user_id", user_id).limit(1).execute()
     prefs_at = str(
         prefs_result.data[0].get("updated_at", "")
         if prefs_result.data else ""

@@ -25,8 +25,8 @@ PHASES = {
       deeper — ask HOW they use it, not just IF they know it.
       Ask ONE skill at a time. Use simple language.
       Never ask generic questions like 'What are your skills?'
-      Instead ask: 'You mentioned working with vehicles. Which parts
-      do you fix most confidently — engine, electrical, or bodywork?'
+      Instead, ask a specific question tailored to their mentioned trade or interest.
+      For example, ask which specific aspects, tools, or tasks within their trade they feel most confident with.
       Match vocabulary to their education level. No technical jargon
       for blue-collar or informal workers."""
   },

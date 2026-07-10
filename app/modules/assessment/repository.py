@@ -40,6 +40,11 @@ class AssessmentRepository:
         )
         return result.data[0] if result.data else None
 
+    async def delete_active_session(self, user_id: str) -> bool:
+        """Deletes the active/incomplete quick_assessment session for the user."""
+        self.db.table("questionnaire_sessions").delete().eq("user_id", user_id).eq("assessment_type", "quick_assessment").eq("is_complete", False).execute()
+        return True
+
     async def get_session_by_id(self, session_id: str, user_id: str) -> dict | None:
         """Fetches a session by ID with ownership check."""
         result = (
@@ -129,10 +134,14 @@ class AssessmentRepository:
         return self.db.table("gap_analysis_reports").update({"is_stale": True}).eq("user_id", user_id).execute()
 
     async def get_user_profile_and_prefs(self, user_id: str) -> dict:
-        """Fetches profile and preferences for a user."""
+        """Fetches profile, preferences, user info, and resume enrichment."""
+        user = self.db.table("users").select("*").eq("id", user_id).limit(1).execute()
         profile = self.db.table("user_profiles").select("*").eq("user_id", user_id).limit(1).execute()
         prefs = self.db.table("user_preferences").select("*").eq("user_id", user_id).limit(1).execute()
+        enrichment = self.db.table("profile_enrichments").select("*").eq("user_id", user_id).limit(1).execute()
         return {
+            "user": user.data[0] if user.data else {},
             "profile": profile.data[0] if profile.data else {},
-            "preferences": prefs.data[0] if prefs.data else {}
+            "preferences": prefs.data[0] if prefs.data else {},
+            "enrichment": enrichment.data[0] if enrichment.data else {}
         }

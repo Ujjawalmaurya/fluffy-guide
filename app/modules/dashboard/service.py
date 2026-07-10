@@ -24,20 +24,53 @@ RULES:
 """
 
 class DashboardService:
+    # Class-level caches to persist across requests (since DashboardService is instantiated per-request)
+    _insight_cache = {} # {user_id: (timestamp, content)}
+    _job_cache = {} # {user_id: (timestamp, list)}
+    _industry_map_cache = None
+    _industry_map_cache_time = 0
+
     def __init__(self, repo: DashboardRepository, ai_provider: IStructuredProvider):
         self.repo = repo
         self.ai_provider = ai_provider
         self.rec_engine = JobRecommendationEngine(repo.db, self.ai_provider)
-        self._insight_cache = {} # {user_id: (timestamp, content)}
-        self._job_cache = {} # {user_id: (timestamp, list)}
+
 
     async def get_summary(self, user_id: str) -> dict:
         """
         Fetches all data for the seeker dashboard summary in parallel.
         """
-        # 1. Gather core data in parallel
+        # Fetch user first to determine their role and dispatch appropriately
+        user = await self.repo.get_user(user_id)
+        if not user:
+            return {}
+
+        role = user.get("user_type", "individual_youth")
+
+        # Route organization and employer dashboards directly to prevent useless/heavy seeker LLM queries
+        if role == "org_employer":
+            return await self.get_employer_summary(user_id)
+        elif role == "org_ngo":
+            profile = await self.repo.get_profile(user_id)
+            return {
+                "profile": profile or {},
+                "user": {
+                    "name": profile.get("full_name") if profile else user.get("email"),
+                    "user_type": role
+                }
+            }
+        elif role == "org_govt":
+            profile = await self.repo.get_profile(user_id)
+            return {
+                "profile": profile or {},
+                "user": {
+                    "name": profile.get("full_name") if profile else user.get("email"),
+                    "user_type": role
+                }
+            }
+
+        # Gather remaining seeker data in parallel
         (
-            user, 
             profile, 
             prefs, 
             skills, 
@@ -45,7 +78,6 @@ class DashboardService:
             enrichment,
             recent_activity
         ) = await asyncio.gather(
-            self.repo.get_user(user_id),
             self.repo.get_profile(user_id),
             self.repo.get_preferences(user_id),
             self.repo.get_user_skills(user_id),
@@ -54,7 +86,6 @@ class DashboardService:
             self.repo.get_recent_activities(user_id, limit=5)
         )
 
-        user = user or {}
         profile = profile or {}
         prefs = prefs or {}
         skills = skills or []
@@ -85,10 +116,10 @@ class DashboardService:
         state = profile.get("state", "")
         skill_names = [s["name"] for s in skills]
 
-        # Check Job Cache (30 min TTL)
+        # Check Job Cache (30 min TTL) - using class variable
         job_matches = None
-        if user_id in self._job_cache:
-            ts, cached_jobs = self._job_cache[user_id]
+        if user_id in DashboardService._job_cache:
+            ts, cached_jobs = DashboardService._job_cache[user_id]
             if time.time() - ts < 1800:
                 job_matches = cached_jobs
 
@@ -106,7 +137,8 @@ class DashboardService:
         ai_insight = results[1]
         if job_matches is None:
             job_matches = results[2]
-            self._job_cache[user_id] = (time.time(), job_matches)
+            DashboardService._job_cache[user_id] = (time.time(), job_matches)
+
 
         # 5. Role-specific highlights
         role_specific = {}
@@ -139,12 +171,17 @@ class DashboardService:
             }
 
         # 6. Build Final Response
+        # Construct profile dictionary with completion percentage for frontend compatibility
+        profile_dict = dict(profile) if profile else {}
+        profile_dict["profile_complete_percentage"] = completion_pct
+
         return {
             "user": {
                 "name": profile.get("full_name") or user.get("email"),
                 "user_type": role,
                 "preferred_lang": user.get("preferred_lang", "en")
             },
+            "profile": profile_dict,
             "profile_completion_pct": completion_pct,
             "onboarding_done": user.get("onboarding_done", False),
             "quick_assessment_done": user.get("quick_assessment_done", False),
@@ -173,9 +210,9 @@ class DashboardService:
         """Generates a short, punchy AI insight based on user context with caching."""
         user_id = user.get("id")
         
-        # 1. Check Cache (1 hour TTL)
-        if user_id in self._insight_cache:
-            ts, content = self._insight_cache[user_id]
+        # 1. Check Cache (1 hour TTL) - using class variable
+        if user_id in DashboardService._insight_cache:
+            ts, content = DashboardService._insight_cache[user_id]
             if time.time() - ts < 3600:
                 log.debug(f"Serving cached AI insight for user={user_id}")
                 return content
@@ -200,6 +237,7 @@ class DashboardService:
             ]
             
             # Use a slightly lower max_tokens and context_window for speed, and use the extraction model + 3s timeout
+            # Keep timeout low to ensure the dashboard remains highly responsive
             from app.core.llm_config import EXTRACTION_MODEL
             response = await self.ai_provider.complete(
                 messages, 
@@ -213,7 +251,7 @@ class DashboardService:
             insight = response.strip().strip('"').strip("'")
             
             # 2. Update Cache
-            self._insight_cache[user_id] = (time.time(), insight)
+            DashboardService._insight_cache[user_id] = (time.time(), insight)
             return insight
 
         except Exception as e:
@@ -312,8 +350,8 @@ class DashboardService:
         """Fetch industry mappings from the database with caching."""
         now = time.time()
         # Cache for 1 hour
-        if hasattr(self, "_industry_map_cache") and (now - getattr(self, "_industry_map_cache_time", 0) < 3600):
-            return self._industry_map_cache
+        if DashboardService._industry_map_cache is not None and (now - DashboardService._industry_map_cache_time < 3600):
+            return DashboardService._industry_map_cache
 
         try:
             result = self.repo.db.table("industry_mappings").select("*").execute()
@@ -329,8 +367,8 @@ class DashboardService:
             if "Other" not in mappings:
                 mappings["Other"] = {"types": ["individual_youth", "individual_bluecollar", "individual_informal"], "streams": [], "interest_keywords": []}
             
-            self._industry_map_cache = mappings
-            self._industry_map_cache_time = now
+            DashboardService._industry_map_cache = mappings
+            DashboardService._industry_map_cache_time = now
             return mappings
         except Exception as e:
             log.error(f"Failed to fetch industry mappings: {e}")

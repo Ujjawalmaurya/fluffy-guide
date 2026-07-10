@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     otp_length: int = 6
 
     # SarvamAI
-    sarvam_api_key: str
+    sarvam_api_key: str = ""
     sarvam_base_url: str = "https://api.sarvam.ai/v1"
 
     # Admin

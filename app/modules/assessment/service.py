@@ -99,6 +99,11 @@ class AssessmentService:
             "phase_name": batch.get("phase_name"), "question_number": 1, "can_resume": False, **eligibility
         }
 
+    async def restart_assessment(self, user_id: str, user_profile: dict) -> dict:
+        """Deletes any existing incomplete session and starts a new assessment session."""
+        await self.repo.delete_active_session(user_id)
+        return await self.start_assessment(user_id, user_profile)
+
     async def submit_answer(self, session_id: str, answer: any, user_id: str, user_profile: dict) -> dict:
         session = await self.repo.get_session_by_id(session_id, user_id)
         if not session: raise ValueError("Session not found")

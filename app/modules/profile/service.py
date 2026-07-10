@@ -17,6 +17,56 @@ COMPLETION_FIELDS = ["full_name", "age", "gender", "state", "city", "education_l
 
 from app.modules.ai_chat.providers.base import IStructuredProvider
 
+def classify_user_type_from_resume(parsed_resume: dict) -> str | None:
+    """Classifies user_type based on primary role and skills parsed from resume."""
+    primary_role = str(parsed_resume.get("primary_role") or "").lower()
+    skills = [str(s.get("name") or s).lower() for s in parsed_resume.get("skills", [])]
+    summary = str(parsed_resume.get("summary") or "").lower()
+    
+    combined_text = f"{primary_role} {summary} " + " ".join(skills)
+    
+    # Keyword sets
+    youth_kws = {
+        "software", "developer", "engineer", "programmer", "coder", "analyst", "consultant", 
+        "manager", "data", "designer", "administrator", "network", "system", "computer", "cse", 
+        "it", "web", "frontend", "backend", "fullstack", "cloud", "aws", "digital", "marketing", 
+        "sales", "finance", "accountant", "office", "hr", "recruiter", "project", "writer", 
+        "editor", "teacher", "instructor", "academic", "student", "graduate", "college", 
+        "university", "science", "technology", "information", "python", "java", "sql", "c++", 
+        "javascript", "html", "css", "react", "node", "angular", "vue", "typescript", "git",
+        "machine learning", "ai", "deep learning", "cybersecurity", "algorithms", "data structures",
+        "intern", "artificial intelligence", "data science"
+    }
+    
+    bluecollar_kws = {
+        "mechanic", "driver", "technician", "plumber", "electrician", "welder", "painter", 
+        "carpenter", "mason", "fitter", "machinist", "operator", "loader", "packer", "fabricator", 
+        "automotive", "repair", "maintenance", "electric", "wiring", "welding", "plumbing", 
+        "hvac", "rigging", "machinery"
+    }
+    
+    informal_kws = {
+        "delivery", "rider", "courier", "cashier", "waiter", "helper", "loader", "security guard", 
+        "caretaker", "nanny", "tailor", "cook", "chef", "housekeeping", "cleaner", "salesperson", 
+        "counter"
+    }
+    
+    youth_score = sum(1 for kw in youth_kws if kw in combined_text)
+    bluecollar_score = sum(1 for kw in bluecollar_kws if kw in combined_text)
+    informal_score = sum(1 for kw in informal_kws if kw in combined_text)
+    
+    log.debug(f"[CLASSIFIER] Scores: youth={youth_score}, bluecollar={bluecollar_score}, informal={informal_score}")
+    
+    if youth_score == 0 and bluecollar_score == 0 and informal_score == 0:
+        return None
+        
+    if youth_score >= bluecollar_score and youth_score >= informal_score:
+        return "individual_youth"
+    elif bluecollar_score >= youth_score and bluecollar_score >= informal_score:
+        return "individual_bluecollar"
+    else:
+        return "individual_informal"
+
 class ProfileService:
     def __init__(self, repo: ProfileRepository, llm: IStructuredProvider):
         self.repo = repo
@@ -57,6 +107,15 @@ class ProfileService:
             log.error(f"Resume parsing failed for user={user_id}: {e}")
             self.repo.update_enrichment_status(user_id, "failed")
             raise
+
+        # Determine user type and update users table if detected
+        try:
+            detected_type = classify_user_type_from_resume(result["parsed"])
+            if detected_type:
+                self.repo.db.table("users").update({"user_type": detected_type}).eq("id", user_id).execute()
+                log.info(f"Updated user_type to {detected_type} for user={user_id} based on resume background")
+        except Exception as e:
+            log.error(f"Failed to auto-update user_type from resume for user={user_id}: {e}")
 
         from app.core import llm_config
         try:

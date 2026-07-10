@@ -1,7 +1,7 @@
 """
 SkillBridge AI — LLM Configuration
 All model configs hardcoded for local hardware optimization.
-Hardware: GTX 1050 Mobile 4GB/6GB VRAM → using consolidated 2-model split.
+Hardware: RTX 4050 Mobile 6GB VRAM → using consolidated 2-model split.
 """
 import os
 from dataclasses import dataclass
@@ -66,17 +66,17 @@ CAREER_REC = TaskConfig(
     task_name="career_recommendation"
 )
 
-# MODULE 3: Learning Roadmap (Reasoning)
+# MODULE 3: Learning Roadmap (Extraction)
 ROADMAP = TaskConfig(
-    model=REASONING_MODEL, temperature=0.1,
-    max_tokens=800, context_window=4096,
+    model=EXTRACTION_MODEL, temperature=0.1,
+    max_tokens=2048, context_window=4096,
     task_name="learning_roadmap"
 )
 
 # MODULE 4: Resume Analyzer (Extraction)
 RESUME_PARSE = TaskConfig(
     model=EXTRACTION_MODEL, temperature=0.1,
-    max_tokens=300, context_window=2048,
+    max_tokens=1500, context_window=4096,
     task_name="resume_analysis"
 )
 
@@ -94,10 +94,10 @@ INTERVIEW_EVAL = TaskConfig(
     task_name="interview_evaluation"
 )
 
-# MODULE 7: Job Match Scorer (Extraction)
+# MODULE 7: Job Match Scorer (Reasoning)
 JOB_RANKING = TaskConfig(
-    model=EXTRACTION_MODEL, temperature=0.1,
-    max_tokens=300, context_window=2048,
+    model=REASONING_MODEL, temperature=0.1,
+    max_tokens=1000, context_window=2048,
     task_name="job_matching"
 )
 
@@ -122,10 +122,10 @@ BULLET_IMPROVE = TaskConfig(
     task_name="bullet_improvement"
 )
 
-# MODULE 11: Adaptive Assessment (Extraction)
+# MODULE 11: Adaptive Assessment (Reasoning)
 ASSESSMENT = TaskConfig(
-    model=EXTRACTION_MODEL, temperature=0.4,
-    max_tokens=300, context_window=4096,
+    model=REASONING_MODEL, temperature=0.4,
+    max_tokens=500, context_window=4096,
     task_name="adaptive_assessment"
 )
 
@@ -168,7 +168,7 @@ OLLAMA_PARAMS = {
     "temperature": 0.1,
     "top_p": 0.9,
     "repeat_penalty": 1.1,
-    "num_thread": 6,  # Balanced for GTX 1050 Mobile
+    "num_thread": 6,  # Balanced for RTX 4050 Mobile
     "num_gpu": 999
 }
 

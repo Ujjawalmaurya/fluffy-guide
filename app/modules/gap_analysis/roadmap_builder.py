@@ -2,6 +2,7 @@
 # Always picks resources from DB — never lets Gemini invent them.
 
 import json
+import asyncio
 from app.modules.learning_resources import repository as res_repo
 from app.core.logger import get_logger
 
@@ -88,10 +89,16 @@ async def build_roadmap(
     all_resources = []
     seen_ids = set()
 
-    for gap in top_gaps:
-        resources = await res_repo.find_by_skill_tag(
-            gap["skill_name"], limit=3
+    # Fetch matching resources for all gaps concurrently
+    async def fetch_resources_for_gap(gap_item):
+        res = await res_repo.find_by_skill_tag(
+            gap_item["skill_name"], limit=3
         )
+        return gap_item, res
+
+    results = await asyncio.gather(*(fetch_resources_for_gap(g) for g in top_gaps))
+
+    for gap, resources in results:
         gap["recommended_resources"] = [r["id"] for r in resources]
         enriched_gaps.append(gap)
         for r in resources:

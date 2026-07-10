@@ -1,7 +1,8 @@
 # [GAP_ANALYSIS] Core gap computation — no LLM calls here.
 # Pure data: compares user skills against job market requirements.
 
-from app.core.database import get_supabase
+import asyncio
+from app.core.database import get_async_supabase
 from app.core.logger import get_logger
 from app.shared.exceptions import AppError
 import difflib
@@ -138,69 +139,69 @@ async def compute_gap(user_id: str) -> dict:
     Returns categorized strengths, gaps, and partial matches.
     No LLM involved — pure DB + scoring math.
     """
-    db = get_supabase()
+    db = await get_async_supabase()
 
-    # Fetch user skills
-    profile = db.table("user_skill_profiles").select("*").eq(
-        "user_id", user_id
-    ).limit(1).execute()
+    # Execute all 3 initial queries concurrently using native async calls
+    profile_task = db.table("user_skill_profiles").select("*").eq("user_id", user_id).limit(1).execute()
+    prefs_task = db.table("user_preferences").select("*").eq("user_id", user_id).limit(1).execute()
+    user_profile_task = db.table("user_profiles").select("state").eq("user_id", user_id).limit(1).execute()
 
-    if not profile.data or not profile.data[0].get("skills"):
+    profile_result, prefs_result, user_profile_result = await asyncio.gather(
+        profile_task, prefs_task, user_profile_task
+    )
+
+    if not profile_result.data or not profile_result.data[0].get("skills"):
         raise GAP_ANALYSIS_NO_SKILLS()
 
     user_skills = {
         s["skill_name"].lower(): s
-        for s in profile.data[0]["skills"] if "skill_name" in s
+        for s in profile_result.data[0]["skills"] if "skill_name" in s
     }
 
-    # Fetch user preferences and location
-    prefs = db.table("user_preferences").select("*").eq(
-        "user_id", user_id
-    ).limit(1).execute()
-    user_prefs = prefs.data[0] if prefs.data else {}
+    user_prefs = prefs_result.data[0] if prefs_result.data else {}
     career_interests = user_prefs.get("career_interests") or []
 
-    user_profile = db.table("user_profiles").select(
-        "state"
-    ).eq("user_id", user_id).limit(1).execute()
     state = (
-        user_profile.data[0].get("state")
-        if user_profile.data else None
+        user_profile_result.data[0].get("state")
+        if user_profile_result.data else None
     )
+
+    # Normalize state casing from snake_case (e.g. uttar_pradesh) to Title Case (e.g. Uttar Pradesh)
+    normalized_state = state.replace("_", " ").title() if state else None
 
     # Fetch matching jobs with fallback
     mapped_interests = _map_interests(career_interests)
-    logger.info(f"[GAP_ENGINE] mapped_interests={mapped_interests}, state={state}")
+    logger.info(f"[GAP_ENGINE] mapped_interests={mapped_interests}, state={normalized_state}")
     
     # Try 1: Exact match (State + Interests)
     jobs_query = db.table("job_listings").select("required_skills, salary_max, category").eq("is_active", True)
-    if state:
-        jobs_query = jobs_query.eq("location_state", state)
+    if normalized_state:
+        jobs_query = jobs_query.eq("location_state", normalized_state)
     if mapped_interests:
         jobs_query = jobs_query.in_("category", mapped_interests)
     
-    jobs_result = jobs_query.limit(200).execute()
+    jobs_result = await jobs_query.limit(200).execute()
     jobs = jobs_result.data or []
     logger.info(f"[GAP_ENGINE] Try 1 (Exact): Found {len(jobs)} jobs")
     match_type = "local_targeted"
 
     # Try 2: Interests only (National)
     if not jobs and mapped_interests:
-        jobs_result = db.table("job_listings").select("required_skills, salary_max, category").eq("is_active", True).in_("category", mapped_interests).limit(200).execute()
+        jobs_result = await db.table("job_listings").select("required_skills, salary_max, category").eq("is_active", True).in_("category", mapped_interests).limit(200).execute()
         jobs = jobs_result.data or []
         logger.info(f"[GAP_ENGINE] Try 2 (Interests Only): Found {len(jobs)} jobs")
         match_type = "national_targeted"
 
     # Try 3: State only (All categories)
-    if not jobs and state:
-        jobs_result = db.table("job_listings").select("required_skills, salary_max, category").eq("is_active", True).eq("location_state", state).limit(200).execute()
+    if not jobs and normalized_state:
+        jobs_result = await db.table("job_listings").select("required_skills, salary_max, category").eq("is_active", True).eq("location_state", normalized_state).limit(200).execute()
         jobs = jobs_result.data or []
         logger.info(f"[GAP_ENGINE] Try 3 (State Only): Found {len(jobs)} jobs")
         match_type = "local_broad"
 
     # Try 4: All active jobs (Global baseline)
     if not jobs:
-        jobs_result = db.table("job_listings").select("required_skills, salary_max, category").eq("is_active", True).limit(200).execute()
+        jobs_result = await db.table("job_listings").select("required_skills, salary_max, category").eq("is_active", True).limit(200).execute()
         jobs = jobs_result.data or []
         logger.info(f"[GAP_ENGINE] Try 4 (Global): Found {len(jobs)} jobs")
         match_type = "all_active"
@@ -211,7 +212,7 @@ async def compute_gap(user_id: str) -> dict:
     else:
         logger.info(
             f"[GAP_ANALYSIS] Analyzing {total_jobs} jobs for "
-            f"user={user_id}. match_type={match_type}, state={state}"
+            f"user={user_id}. match_type={match_type}, state={normalized_state}"
         )
 
     # Build required skills frequency map
