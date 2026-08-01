@@ -1,0 +1,38 @@
+name: Keep Supabase Alive
+
+on:
+  schedule:
+    # Run daily at 5:00 AM UTC. Supabase pauses free-tier projects after 7 days of inactivity.
+    - cron: '0 5 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions UI
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_KEY" ]; then
+            echo "Error: SUPABASE_URL or SUPABASE_SERVICE_KEY secret is not set in GitHub."
+            exit 1
+          fi
+
+          echo "Pinging users table to keep database active..."
+          status_code=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X GET "${SUPABASE_URL}/rest/v1/users?select=id&limit=1" \
+            -H "apikey: ${SUPABASE_SERVICE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}")
+
+          echo "Response status code: $status_code"
+
+          # 000 means curl could not establish a connection at all.
+          # Any other response code (even if 4xx/5xx auth errors) means the API layer and DB were touched.
+          if [ "$status_code" -eq 000 ]; then
+            echo "Error: Failed to connect to Supabase."
+            exit 1
+          fi
+
+          echo "Ping complete."
