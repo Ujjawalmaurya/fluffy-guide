@@ -55,14 +55,14 @@ class TaskConfig:
 # MODULE 1: Skill Gap Analyzer (Reasoning)
 GAP_ANALYSIS = TaskConfig(
     model=REASONING_MODEL, temperature=0.1,
-    max_tokens=600, context_window=1024,
+    max_tokens=2500, context_window=4096,
     task_name="skill_gap_analysis"
 )
 
 # MODULE 2: Career Recommendation Engine (Reasoning)
 CAREER_REC = TaskConfig(
     model=REASONING_MODEL, temperature=0.1,
-    max_tokens=600, context_window=1024,
+    max_tokens=2500, context_window=4096,
     task_name="career_recommendation"
 )
 
@@ -83,7 +83,7 @@ RESUME_PARSE = TaskConfig(
 # MODULE 5: Interview Questions (Reasoning)
 MOCK_INTERVIEW = TaskConfig(
     model=REASONING_MODEL, temperature=0.4,
-    max_tokens=600, context_window=4096,
+    max_tokens=2500, context_window=4096,
     task_name="interview_generation"
 )
 
@@ -97,14 +97,14 @@ INTERVIEW_EVAL = TaskConfig(
 # MODULE 7: Job Match Scorer (Reasoning)
 JOB_RANKING = TaskConfig(
     model=REASONING_MODEL, temperature=0.1,
-    max_tokens=1000, context_window=2048,
+    max_tokens=2500, context_window=4096,
     task_name="job_matching"
 )
 
 # MODULE 8: Blue-Collar Guide (Reasoning)
 VOCATIONAL_GUIDE = TaskConfig(
     model=REASONING_MODEL, temperature=0.1,
-    max_tokens=600, context_window=2048,
+    max_tokens=2500, context_window=4096,
     task_name="vocational_guidance"
 )
 
@@ -122,17 +122,24 @@ BULLET_IMPROVE = TaskConfig(
     task_name="bullet_improvement"
 )
 
-# MODULE 11: Adaptive Assessment (Reasoning)
+# MODULE 11: Adaptive Assessment (Extraction)
 ASSESSMENT = TaskConfig(
-    model=REASONING_MODEL, temperature=0.4,
+    model=EXTRACTION_MODEL, temperature=0.4,
     max_tokens=500, context_window=4096,
     task_name="adaptive_assessment"
+)
+
+# MODULE 13: Assessment Extraction (Reasoning)
+ASSESSMENT_EXTRACTION = TaskConfig(
+    model=EXTRACTION_MODEL, temperature=0.1,
+    max_tokens=1500, context_window=4096,
+    task_name="assessment_extraction"
 )
 
 # Legacy / Misc (Reasoning)
 CAREER_CHAT = TaskConfig(
     model=REASONING_MODEL, temperature=0.85,
-    max_tokens=800, context_window=4096,
+    max_tokens=2500, context_window=4096,
     task_name="career_guidance_chat"
 )
 
@@ -157,7 +164,7 @@ LLM_TASKS = {
     "bullet_improve": BULLET_IMPROVE,
     "skill_extract": SKILL_EXTRACT,
     "assessment": ASSESSMENT,
-    "assessment_extraction": SKILL_EXTRACT,
+    "assessment_extraction": ASSESSMENT_EXTRACTION,
     "onboarding": ONBOARDING_Q_GEN
 }
 

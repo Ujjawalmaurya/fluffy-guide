@@ -84,6 +84,10 @@ class OllamaProvider(ICompletionProvider, IStructuredProvider):
 
         for m in messages:
             if m["role"] == "system":
+                # Bypassing default role injection if prompt has a predefined role
+                if "ROLE:" in m["content"]:
+                    system_found = True
+                    break
                 if rule_marker not in m["content"]:
                     m["content"] = f"{rules}\n\n{m['content']}"
                 system_found = True

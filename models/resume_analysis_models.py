@@ -48,6 +48,7 @@ class StructuredProfile(BaseModel):
     has_linkedin: bool = False
     has_github: bool = False
     has_summary_section: bool = False
+    interests: List[str] = Field(default_factory=list)
 
 class QualityScores(BaseModel):
     ats_compatibility: int = 0

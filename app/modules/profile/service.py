@@ -163,6 +163,41 @@ class ProfileService:
         else:
             log.warning(f"Resume parsed but no skills found for user={user_id}")
 
+        # Update user_profiles and user_preferences tables with extracted interests/skills
+        try:
+            from app.core.database import get_supabase
+            db = get_supabase()
+            
+            parsed_interests = result["parsed"].get("interests", [])
+            primary_role = result["parsed"].get("primary_role")
+            
+            # 1. Update user_profiles
+            profile_update = {}
+            if parsed_interests:
+                profile_update["interests"] = parsed_interests
+            
+            skill_names = [s.get("name") for s in cleaned_skills if s.get("name")]
+            if skill_names:
+                profile_update["secondary_skills"] = skill_names
+                
+            if profile_update:
+                db.table("user_profiles").update(profile_update).eq("user_id", user_id).execute()
+                log.info(f"Updated user_profiles for user={user_id} with: {profile_update}")
+                
+            # 2. Update/upsert user_preferences
+            prefs_update = {}
+            if parsed_interests:
+                prefs_update["career_interests"] = parsed_interests
+            if primary_role:
+                prefs_update["target_roles"] = [primary_role]
+                
+            if prefs_update:
+                db.table("user_preferences").upsert({"user_id": user_id, **prefs_update}, on_conflict="user_id").execute()
+                log.info(f"Updated user_preferences for user={user_id} with: {prefs_update}")
+                
+        except Exception as db_err:
+            log.error(f"Failed to update user_profiles/user_preferences after resume upload: {db_err}")
+
         log.info(f"Resume parsed for user={user_id}. Found {len(cleaned_skills)} skills")
         self.repo.log_activity(
             user_id, 

@@ -19,6 +19,8 @@ class ProfileUpdateRequest(BaseSchema):
     languages: Optional[List[Language]] = None
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
+    interests: Optional[List[str]] = None
+    secondary_skills: Optional[List[str]] = None
 
 
     model_config = BaseSchema.get_config(

@@ -6,7 +6,8 @@ from app.modules.assessment.repository import AssessmentRepository
 from app.schemas.request.assessment import AssessmentAnswerRequest
 from app.schemas.response.assessment import (
     StartAssessmentResponse, AnswerResponse, 
-    AssessmentStatusResponse, AssessmentHistoryItem
+    AssessmentStatusResponse, AssessmentHistoryItem,
+    LatestAssessmentResponse
 )
 from app.shared.dependencies import get_current_user, get_db, get_structured_provider
 from app.shared.response_models import APIResponse, ok
@@ -48,13 +49,12 @@ async def start_assessment(
     result = await service.start_assessment(user_id=current_user["id"], user_profile=user_profile)
     return ok(data=result)
 
-@router.post("/restart", response_model=APIResponse[StartAssessmentResponse])
+@router.post("/restart", response_model=APIResponse[dict])
 async def restart_assessment(
     current_user: dict = Depends(get_current_user),
     service: AssessmentService = Depends(get_assessment_service)
 ):
-    user_profile = await _get_user_profile(current_user["id"], service.repo)
-    result = await service.restart_assessment(user_id=current_user["id"], user_profile=user_profile)
+    result = await service.restart_assessment(user_id=current_user["id"])
     return ok(data=result)
 
 @router.post("/answer", response_model=APIResponse[AnswerResponse])
@@ -101,9 +101,64 @@ async def get_history(
     service: AssessmentService = Depends(get_assessment_service)
 ):
     sessions = await service.repo.get_history(current_user["id"])
-    history = [{
-        "session_id": s["id"], "retake_number": s["retake_number"], "is_complete": s["is_complete"],
-        "completed_at": s.get("completed_at"), "skills_count": len(s.get("extracted_proficiency") or []),
-        "created_at": s["created_at"]
-    } for s in sessions]
+    history = []
+    for s in sessions:
+        prof = s.get("extracted_proficiency")
+        if isinstance(prof, dict):
+            skills_count = len(prof.get("skills") or [])
+        else:
+            skills_count = len(prof or [])
+        history.append({
+            "session_id": s["id"],
+            "retake_number": s["retake_number"],
+            "is_complete": s["is_complete"],
+            "completed_at": s.get("completed_at"),
+            "skills_count": skills_count,
+            "created_at": s["created_at"]
+        })
     return ok(data=history)
+
+
+@router.get("/latest", response_model=APIResponse[LatestAssessmentResponse])
+async def get_latest_completed_session(
+    current_user: dict = Depends(get_current_user),
+    service: AssessmentService = Depends(get_assessment_service)
+):
+    user_id = current_user["id"]
+    results = await asyncio.gather(
+        service.repo.get_last_completed(user_id),
+        service.check_retake_eligibility(user_id)
+    )
+    session = results[0]
+    eligibility = results[1]
+    
+    if not session:
+        # If no completed session found, return a default mock/fallback or 404. Let's return a clean schema with empty fields.
+        return ok(data={
+            "session_id": "",
+            "is_complete": False,
+            "skills_found": [],
+            "assessment_summary": "",
+            "completed_at": None,
+            "retakes_remaining": eligibility.get("retakes_remaining", 0),
+            "can_retake": eligibility.get("eligible", False)
+        })
+        
+    prof = session.get("extracted_proficiency")
+    if isinstance(prof, dict):
+        skills = prof.get("skills", [])
+        summary = prof.get("assessment_summary", "")
+    else:
+        skills = prof or []
+        summary = ""
+        
+    return ok(data={
+        "session_id": session["id"],
+        "is_complete": True,
+        "skills_found": skills,
+        "assessment_summary": summary,
+        "completed_at": session.get("completed_at"),
+        "retakes_remaining": eligibility.get("retakes_remaining", 0),
+        "can_retake": eligibility.get("eligible", False)
+    })
+

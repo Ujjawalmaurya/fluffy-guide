@@ -237,7 +237,7 @@ class DashboardService:
             ]
             
             # Use a slightly lower max_tokens and context_window for speed, and use the extraction model + 3s timeout
-            # Keep timeout low to ensure the dashboard remains highly responsive
+            # Keep timeout aligned with other backend tasks to give local GPU room to load/process
             from app.core.llm_config import EXTRACTION_MODEL
             response = await self.ai_provider.complete(
                 messages, 
@@ -245,7 +245,7 @@ class DashboardService:
                 max_tokens=40,
                 context_window=1024,
                 model=EXTRACTION_MODEL,
-                timeout=3.0
+                timeout=15.0
             )
             
             insight = response.strip().strip('"').strip("'")

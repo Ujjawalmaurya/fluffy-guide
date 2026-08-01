@@ -29,7 +29,8 @@ You must return ONLY valid JSON that matches the following structure:
   "education": [{"degree": "string", "institution": "string", "year": number}],
   "career_trajectory": {"direction": "ascending|lateral|descending|unclear", "summary": "string"},
   "has_photo_mentioned": boolean,
-  "has_caste_religion_info": boolean
+  "has_caste_religion_info": boolean,
+  "interests": ["string"]
 }
 
 Follow these strict rules:
@@ -40,6 +41,7 @@ Follow these strict rules:
 3. Infer skill levels (beginner, intermediate, advanced) based on context.
 4. Detect soft skills from the language used: e.g., "led team" -> Leadership.
 5. If a field is missing, use null or an empty list/dict as appropriate.
+6. Extract professional or career interests or key fields of interest (interests) from the resume text (e.g. software engineering, digital marketing, finance, agriculture).
 
 Output must be ONLY the JSON object. No markdown, no preamble.
 """
@@ -54,6 +56,13 @@ def normalize_ai_output(data: dict) -> dict:
     
     if "experience" in data and "experiences" not in data:
         data["experiences"] = data["experience"]
+
+    if "interests" not in data:
+        data["interests"] = []
+    elif isinstance(data["interests"], str):
+        data["interests"] = [data["interests"]]
+    elif not isinstance(data["interests"], list):
+        data["interests"] = []
 
     # 1. Handle "skills" - must be list of Skill objects
     if isinstance(data.get("skills"), list):

@@ -57,7 +57,7 @@ class AssessmentQuestionLLMOutput(BaseSchema):
     options: List[str] = Field(default_factory=list) # Options are now required for chips
     allows_multiple: bool = False
     allows_other: bool = True
-    skill_probing: str
+    skill_probing: str = "general"
 
 class AssessmentBatchLLMOutput(BaseSchema):
     """

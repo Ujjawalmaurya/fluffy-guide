@@ -76,7 +76,40 @@ class AssessmentService:
             
         if eligibility["has_incomplete"]:
             session = await self.repo.get_session_by_id(eligibility["incomplete_session_id"], user_id)
-            batch = await adaptive_engine.generate_next_question(session, {**user_profile, "user_id": user_id}, self.llm_provider)
+            
+            # Retrieve the current question from saved adaptive_context if it exists
+            batch = None
+            for msg in reversed(session.get("adaptive_context", [])):
+                if msg.get("role") == "assistant":
+                    try:
+                        batch = json.loads(msg.get("content", ""))
+                        break
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            
+            # Heal legacy single question format if found
+            if batch and isinstance(batch, dict):
+                if "question" in batch and "questions" not in batch:
+                    batch["questions"] = [{
+                        "question": batch.pop("question"),
+                        "question_type": batch.pop("question_type", "text"),
+                        "options": batch.pop("options", []),
+                        "allows_multiple": batch.pop("allows_multiple", False),
+                        "allows_other": batch.pop("allows_other", True),
+                        "skill_probing": batch.pop("skill_probing", "general")
+                    }]
+                if "questions" in batch and isinstance(batch["questions"], dict):
+                    batch["questions"] = [batch["questions"]]
+            
+            # Fallback: if no active question exists in saved context, generate one
+            if not batch:
+                batch = await adaptive_engine.generate_next_question(session, {**user_profile, "user_id": user_id}, self.llm_provider)
+                await self.repo.update_session(
+                    session["id"],
+                    adaptive_context=[{"role": "assistant", "content": json.dumps(batch)}],
+                    current_question_number=0, last_question_at=_utcnow().isoformat()
+                )
+                
             return {
                 "session_id": session["id"], "batch": batch, "phase": batch.get("phase"),
                 "phase_name": batch.get("phase_name"), "question_number": session["current_question_number"] + 1,
@@ -99,10 +132,10 @@ class AssessmentService:
             "phase_name": batch.get("phase_name"), "question_number": 1, "can_resume": False, **eligibility
         }
 
-    async def restart_assessment(self, user_id: str, user_profile: dict) -> dict:
-        """Deletes any existing incomplete session and starts a new assessment session."""
+    async def restart_assessment(self, user_id: str) -> dict:
+        """Deletes any existing incomplete session quickly from the database."""
         await self.repo.delete_active_session(user_id)
-        return await self.start_assessment(user_id, user_profile)
+        return {"status": "success"}
 
     async def submit_answer(self, session_id: str, answer: any, user_id: str, user_profile: dict) -> dict:
         session = await self.repo.get_session_by_id(session_id, user_id)
@@ -145,11 +178,18 @@ class AssessmentService:
         temp_session = {"adaptive_context": final_context}
         extracted = await adaptive_engine.extract_skills_from_session(temp_session, {**user_profile, "user_id": user_id}, self.llm_provider)
         skills = extracted.get("skills", [])
+        summary = extracted.get("assessment_summary", "")
+        
+        # Pack both verified skills and the structured summary together
+        extracted_proficiency_data = {
+            "skills": skills,
+            "assessment_summary": summary
+        }
         
         # Parallelize independent completion tasks
         skill_repo = SkillProfileRepository(self.repo.db)
         await asyncio.gather(
-            self.repo.update_session(session_id, is_complete=True, completed_at=_utcnow().isoformat(), adaptive_context=final_context, extracted_proficiency=skills),
+            self.repo.update_session(session_id, is_complete=True, completed_at=_utcnow().isoformat(), adaptive_context=final_context, extracted_proficiency=extracted_proficiency_data),
             skill_aggregator.merge_from_assessment(user_id, skills, skill_repo),
             self.repo.mark_assessment_done(user_id),
             self.repo.invalidate_gap_analysis(user_id),
@@ -159,7 +199,7 @@ class AssessmentService:
         eligibility = await self.check_retake_eligibility(user_id)
         return {
             "session_id": session_id, "is_complete": True, "skills_found": skills,
-            "career_goals": extracted.get("career_goals", []), "assessment_summary": extracted.get("assessment_summary", ""),
+            "career_goals": extracted.get("career_goals", []), "assessment_summary": summary,
             "retakes_remaining": eligibility["retakes_remaining"]
         }
 

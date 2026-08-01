@@ -58,6 +58,7 @@ class ResumeData(BaseSchema):
     weaknesses: List[str]
     career_suggestions: List[str]
     skill_gap_analysis: str
+    interests: List[str] = Field(default_factory=list)
 
 # Optimized prompt following HARD RULES
 RESUME_SYSTEM_PROMPT = f"""ROLE: You are an elite AI engineer at SkillBridge.
@@ -76,6 +77,7 @@ SCHEMA RULES:
 - weaknesses: [string] (max 3)
 - career_suggestions: [string] (max 3)
 - skill_gap_analysis: missing skill (max 10 words)
+- interests: [string] (professional/career interests or fields, max 3)
 
 {llm_config.CONCISENESS_INSTRUCTION}
 """

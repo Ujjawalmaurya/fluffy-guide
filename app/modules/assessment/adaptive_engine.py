@@ -1,7 +1,7 @@
 import json
 from app.modules.ai_chat.providers.base import IStructuredProvider
 from app.modules.assessment.phase_config import (
-  get_phase_for_question, get_phase_config, PHASE_QUESTION_RANGES
+    get_phase_for_question, get_phase_config, PHASE_QUESTION_RANGES
 )
 from app.core.logger import get_logger
 from app.core.llm_config import LLM_TASKS, CONCISENESS_INSTRUCTION
@@ -12,282 +12,412 @@ logger = get_logger("ASSESSMENT")
 
 # ── Prompt Templates ─────────────────────────────────────────────
 
-QUESTION_SYSTEM_PROMPT = """ROLE: You are SkillBridge AI, a sharp, empathetic career mentor.
-Speaking with a {user_type} from {state}, education: {education_level}.
-{background_context}
+# Here is how the questioning works:
+# We feed the model user details, what topics we already probed, and the full chat history.
+# The model must return a JSON response with exactly one question that adapts to the previous answer.
+QUESTION_SYSTEM_PROMPT = """ROLE:
+You are SkillBridge AI, a sharp, empathetic career counselor, industrial psychologist, and technical interviewer.
+You are interviewing {full_name}, who is from the state of {state} and has an education level of: "{education_level}".
+User Category: {user_type_desc}
 
-TASK: Generate EXACTLY {batch_size} distinct assessment questions to map their skill depth.
+OBJECTIVE:
+Ask exactly {batch_size} targeted question to assess their actual skills, depth of knowledge, work style, motivators, and blockers.
+Your goal is to gather high-quality, specific insights. Do not rush to recommend roles yet.
+Each question should feel like a natural follow-up to their previous response.
 
-STYLE: Punchy, high-agency, ZERO corporate fluff. Match vocabulary to {education_level}.
+STYLE:
+Conversational, friendly, and direct. Zero corporate jargon.
+Keep questions concise and easy to answer. Match your vocabulary to their education level.
 
 CONTEXT:
-- Phase: {phase_name}
-- Goal: {phase_goal}
-- Instruction: {phase_instruction}
-- Probed Topics: {covered_topics}
+- Assessment Phase: {phase_name}
+- Phase Goal: {phase_goal}
+- Specific Instruction for Phase: {phase_instruction}
+- Already Probed Topics: {covered_topics}
 
-JSON STRUCTURE:
+JSON FORMAT REQUIRED:
 {{
   "questions": [
     {{
-      "question": "...",
-      "question_type": "mcq",
-      "options": ["...", "..."],
-      "allows_multiple": true|false,
+      "question": "The actual question text here",
+      "question_type": "text" | "mcq" | "rating",
+      "options": ["Option A", "Option B"] or [],
+      "allows_multiple": false,
       "allows_other": true,
-      "skill_probing": "..."
+      "skill_probing": "Name of the skill or topic being assessed"
     }}
   ],
   "phase": {phase_number},
   "phase_name": "{phase_name}"
 }}
 
-RULES:
-- Maximum 15 words per question.
-- 3-8 short chips. Use "Other" (allows_other: true) for free-form depth.
-- Use {language} language.
-- Never repeat a topic from 'Probed Topics'.
-- **NO PARROTING**: Do not use the user's previous answers as the choices/options in subsequent questions. Options should provide new alternatives, tools, or concepts to select from.
-- **DIFFICULTY**: If they answer confidently, push deeper. If they struggle, simplify.
-- **VARIETY**: Mix MCQ with single-choice. Avoid predictable patterns.
-- Be creative. Don't sound like a bureaucrat.
-
-{CONCISENESS_INSTRUCTION}
+CRITICAL RULES:
+1. Ask ONLY one question (batch_size is 1).
+2. Adapt: read the previous answers in the history. If the user answered a question, push deeper on that skill or check for practical experience.
+3. If they struggled or gave a brief answer, simplify the next question. If they answered confidently, probe their depth.
+4. Avoid generic "What are your skills?" questions. Ask situational, behavioral, or trade-specific questions instead.
+5. Use rating question type to let users self-assess (1 to 5) comfort levels with specific tools or tasks.
+6. Use mcq type with options to let users pick chips, or text type for open-ended reflections.
+7. Language: Speak in {language_choice}. Keep the phrasing natural and relatable.
+8. Do not repeat topics listed in "Already Probed Topics".
+9. Never reuse the user's exact words back as MCQ choices. Offer new alternatives or typical industry answers.
 """
 
-SKILL_EXTRACTION_SYSTEM_PROMPT = """ROLE: You are an elite career analyst for SkillBridge AI.
-TASK: Extract skills and insights from assessment responses.
-JSON ONLY. No prose. No markdown. No explanation.
+# The extraction prompt builds the final report from the chat log.
+# Since we bumped the token limit in llm_config, it can write a rich, detailed markdown summary.
+SKILL_EXTRACTION_SYSTEM_PROMPT = """ROLE:
+You are an expert career analyst, industrial psychologist, and senior vocational advisor.
 
-USER PROFILE:
-- Type: {user_type}
+TASK:
+Analyze the complete Q&A assessment transcript of {full_name} and compile a highly structured, comprehensive career report.
+
+USER DETAILS:
+- Category: {user_type_desc}
 - State: {state}
 - Education: {education_level}
 {background_context}
 
-JSON STRUCTURE:
+JSON FORMAT REQUIRED:
 {{
   "skills": [
     {{
-      "skill_name": "...",
-      "category": "technical|soft|domain|tool|language",
-      "proficiency_numeric": 1-5,
-      "proficiency_label": "Beginner|Elementary|Intermediate|Advanced|Expert",
-      "confidence": 0.0-1.0,
-      "evidence": "exact phrase from answers"
+      "skill_name": "Name of skill",
+      "category": "technical" | "soft" | "domain" | "tool" | "language",
+      "proficiency_numeric": 1,
+      "proficiency_label": "Beginner" | "Elementary" | "Intermediate" | "Advanced" | "Expert",
+      "confidence": 0.8,
+      "evidence": "Quote or paraphrase from their responses"
     }}
   ],
-  "career_goals": ["..."],
-  "blockers": ["..."],
+  "career_goals": ["Goal 1", "Goal 2"],
+  "blockers": ["Blocker 1", "Blocker 2"],
   "work_preferences": {{
-    "environment": "team|solo|mixed",
-    "timing": "fixed|flexible",
-    "location_flexible": true|false
+    "environment": "team" | "solo" | "mixed",
+    "timing": "fixed" | "flexible",
+    "location_flexible": true
   }},
-  "assessment_summary": "2 sentence specific summary"
+  "assessment_summary": "Rich markdown summary"
 }}
 
-RULES:
-- Only include explicitly demonstrated skills.
-- Evidence must be real phrases.
-- Summary must be warm and specific.
+RULES FOR STRUCTURED SUMMARY:
+The "assessment_summary" field must contain a beautiful, comprehensive Markdown document covering these sections:
 
-{CONCISENESS_INSTRUCTION}
+# Executive Summary
+[A summary of who they are, their strengths, work habits, and potential]
+
+# Key Strengths
+- **Primary Strengths**: [Strengths demonstrated with evidence]
+- **Hidden Potentials**: [Talents inferred from hobbies, values, or background]
+
+# Competency Profile
+- **Technical & Practical Skills**: [Tools, machinery, software, or trades they know]
+- **Soft Skills**: [Communication, teamwork, problem solving, organization]
+- **Learning & Adaptability**: [How they learn, self-taught skills, adapt to change]
+
+# Behavioral Profile
+- **Work Style & Environment**: [Team vs solo, structure vs flexibility, risk attitude]
+- **Motivators & Values**: [What drives them, company culture alignment, career values]
+
+# Career Recommendation & Analytics
+- **Readiness Score**: [Score 0-100 indicating job readiness with brief reasoning]
+- **Confidence Index**: [Score 0-100 showing their self-belief based on the chat]
+- **Top Recommended Careers**:
+  1. [Career Name] ([Match %]%) - [Why they fit, active skills they have, and gap areas to fill]
+  ... (List up to 5 highly relevant careers)
+
+# Learning & Growth Action Plan
+- **Skills to Build**: [Gaps they must bridge next]
+- **Certifications & Training**: [Practical training or courses that would help]
+- **Resume & Interview Advice**: [Practical tips for job hunting]
+- **2-5 Year Outlook**: [Strategic plan for long-term career growth]
+
+Ensure the summary is rich and comprehensive, bypassing standard conciseness constraints.
 """
+
 
 # ── Helper Functions ─────────────────────────────────────────────
 
+def _get_readable_user_type(user_type: str) -> str:
+    # Maps internal user_type enums to clear descriptions for the LLM
+    mapping = {
+        "individual_youth": "Student / Youth seeking career opportunities",
+        "individual_bluecollar": "Blue-collar worker / Skilled trade specialist",
+        "individual_informal": "Informal sector worker / Daily wager / Freelancer"
+    }
+    return mapping.get(user_type, "Job Seeker")
+
+def _get_readable_education(edu: str) -> str:
+    # Map education code to clean readable text
+    mapping = {
+        "none": "No formal education",
+        "primary": "Primary school",
+        "secondary": "Secondary school (10th/12th grade)",
+        "graduate": "College graduate",
+        "postgrad": "Postgraduate degree"
+    }
+    return mapping.get(edu, edu or "Not specified")
+
 def extract_covered_topics(conversation_history: list) -> str:
-  topics = []
-  for msg in conversation_history:
-    if msg.get("role") == "assistant":
-      try:
-        content = msg.get("content", "")
-        if not content:
-          continue
-        obj = json.loads(content)
-        if isinstance(obj, dict) and obj.get("questions"):
-          for q in obj["questions"]:
-            probing = q.get("skill_probing")
-            if probing:
-              # Ensure it's a string
-              topics.append(str(probing))
-      except (json.JSONDecodeError, TypeError, KeyError):
-        pass
-  return ", ".join(topics) if topics else "none yet"
+    # Extracts the probed skill topics from previous assistant messages
+    topics = []
+    for msg in conversation_history:
+        if msg.get("role") == "assistant":
+            try:
+                content = msg.get("content", "")
+                if not content:
+                    continue
+                obj = json.loads(content)
+                if isinstance(obj, dict) and obj.get("questions"):
+                    for q in obj["questions"]:
+                        probing = q.get("skill_probing")
+                        if probing:
+                            topics.append(str(probing))
+            except (json.JSONDecodeError, TypeError, KeyError):
+                pass
+    return ", ".join(topics) if topics else "None yet"
 
 def _format_answer(a: any) -> str:
-  """Safely formats an answer, extracting label/value from dicts if needed."""
-  if isinstance(a, list):
-    return ", ".join(_format_answer(item) for item in a)
-  if isinstance(a, dict):
-    # Handle chip-like objects: {"label": "...", "value": "..."}
-    return str(a.get("label") or a.get("value") or a)
-  return str(a)
+    # Formats lists or dicts of answers to plain text strings
+    if isinstance(a, list):
+        return ", ".join(_format_answer(item) for item in a)
+    if isinstance(a, dict):
+        return str(a.get("label") or a.get("value") or a)
+    return str(a)
 
 def format_qa_pairs(conversation_history: list) -> str:
-  pairs = []
-  last_questions = []
-  for msg in conversation_history:
-    if msg.get("role") == "assistant":
-      try:
-        obj = json.loads(msg["content"])
-        last_questions = [q["question"] for q in obj.get("questions", [])]
-      except (json.JSONDecodeError, KeyError):
-        last_questions = [msg["content"]]
-    elif msg.get("role") == "user" and last_questions:
-      try:
-        answers_raw = json.loads(msg["content"])
-        if isinstance(answers_raw, dict):
-          for idx_str in sorted(answers_raw.keys(), key=lambda k: int(k)):
-            idx = int(idx_str)
-            q = last_questions[idx] if idx < len(last_questions) else f"Question {idx + 1}"
-            a = answers_raw[idx_str]
-            pairs.append(f"Q: {q}\nA: {_format_answer(a)}")
-        elif isinstance(answers_raw, list):
-          for q, a in zip(last_questions, answers_raw):
-            pairs.append(f"Q: {q}\nA: {_format_answer(a)}")
-        else:
-          pairs.append(f"Q: {last_questions[0]}\nA: {_format_answer(answers_raw)}")
-      except (json.JSONDecodeError, TypeError):
-        pairs.append(f"Q: {last_questions[0]}\nA: {msg['content']}")
-      last_questions = []
-  return "\n\n".join(pairs) if pairs else "No answers recorded."
-
+    # Groups questions and answers sequentially for LLM prompt context
+    pairs = []
+    last_questions = []
+    for msg in conversation_history:
+        if msg.get("role") == "assistant":
+            try:
+                obj = json.loads(msg["content"])
+                last_questions = [q["question"] for q in obj.get("questions", [])]
+            except (json.JSONDecodeError, KeyError):
+                last_questions = [msg["content"]]
+        elif msg.get("role") == "user" and last_questions:
+            try:
+                answers_raw = json.loads(msg["content"])
+                if isinstance(answers_raw, dict):
+                    for idx_str in sorted(answers_raw.keys(), key=lambda k: int(k)):
+                        idx = int(idx_str)
+                        q = last_questions[idx] if idx < len(last_questions) else f"Question {idx + 1}"
+                        a = answers_raw[idx_str]
+                        pairs.append(f"Q: {q}\nA: {_format_answer(a)}")
+                elif isinstance(answers_raw, list):
+                    for q, a in zip(last_questions, answers_raw):
+                        pairs.append(f"Q: {q}\nA: {_format_answer(a)}")
+                else:
+                    pairs.append(f"Q: {last_questions[0]}\nA: {_format_answer(answers_raw)}")
+            except (json.JSONDecodeError, TypeError):
+                pairs.append(f"Q: {last_questions[0]}\nA: {msg['content']}")
+            last_questions = []
+    return "\n\n".join(pairs) if pairs else "No answers recorded."
 
 def _get_background_context(user_profile: dict) -> str:
-  """Builds a clean background context string from profile data to supply to prompt."""
-  parts = []
-  
-  # Role / Trade
-  role = user_profile.get("primary_role") or user_profile.get("primary_trade") or user_profile.get("current_work_type")
-  if role:
-    parts.append(f"- Role/Trade of Interest: {role}")
+    # Gathers background data like target roles or skills from resume
+    parts = []
     
-  # Resume skills / interests
-  resume_skills = user_profile.get("resume_skills")
-  if resume_skills:
-    skills_str = ", ".join(resume_skills) if isinstance(resume_skills, list) else str(resume_skills)
-    parts.append(f"- Known Skills: {skills_str}")
-    
-  # General career interests
-  interests = user_profile.get("career_interests") or user_profile.get("target_roles") or user_profile.get("interests")
-  if interests:
-    interests_str = ", ".join(interests) if isinstance(interests, list) else str(interests)
-    parts.append(f"- Career Interests: {interests_str}")
-    
-  if not parts:
-    return ""
-    
-  return "\nBACKGROUND CONTEXT:\n" + "\n".join(parts)
+    role = user_profile.get("primary_role") or user_profile.get("primary_trade") or user_profile.get("current_work_type")
+    if role:
+        parts.append(f"- Role/Trade of Interest: {role}")
+        
+    resume_skills = user_profile.get("resume_skills")
+    if resume_skills:
+        skills_str = ", ".join(resume_skills) if isinstance(resume_skills, list) else str(resume_skills)
+        parts.append(f"- Known Skills from Resume: {skills_str}")
+        
+    interests = user_profile.get("career_interests") or user_profile.get("target_roles") or user_profile.get("interests")
+    if interests:
+        interests_str = ", ".join(interests) if isinstance(interests, list) else str(interests)
+        parts.append(f"- Declared Interests: {interests_str}")
+        
+    if not parts:
+        return ""
+        
+    return "\nBACKGROUND CONTEXT:\n" + "\n".join(parts)
+
+def _clean_conversation_history(conversation_history: list) -> list:
+    # Converts assistant JSON nodes and user selection payloads into human-like chat lines
+    cleaned = []
+    for msg in conversation_history:
+        role = msg.get("role")
+        content = msg.get("content", "")
+        if not content:
+            continue
+            
+        if role == "assistant":
+            try:
+                obj = json.loads(content)
+                questions = [q["question"] for q in obj.get("questions", [])]
+                cleaned_content = " ".join(questions)
+            except (json.JSONDecodeError, KeyError, TypeError):
+                cleaned_content = content
+            cleaned.append({"role": "assistant", "content": cleaned_content})
+            
+        elif role == "user":
+            try:
+                answers_raw = json.loads(content)
+                if isinstance(answers_raw, dict):
+                    answers = []
+                    for idx_str in sorted(answers_raw.keys(), key=lambda k: int(k)):
+                        answers.append(str(answers_raw[idx_str]))
+                    cleaned_content = " ".join(answers)
+                elif isinstance(answers_raw, list):
+                    cleaned_content = " ".join(str(a) for a in answers_raw)
+                else:
+                    cleaned_content = str(answers_raw)
+            except (json.JSONDecodeError, TypeError):
+                cleaned_content = content
+            cleaned.append({"role": "user", "content": cleaned_content})
+        else:
+            cleaned.append(msg)
+            
+    return cleaned
 
 
 # ── Core Functions ────────────────────────────────────────────────
 
 async def generate_next_question(
-  session: dict,
-  user_profile: dict,
-  llm_provider: IStructuredProvider
+    session: dict,
+    user_profile: dict,
+    llm_provider: IStructuredProvider
 ) -> dict:
-  """Generates the next batch of adaptive questions using LLM."""
-  current_q_count = session.get("current_question_number", 0)
-  phase_num = get_phase_for_question(current_q_count + 1)
-  phase = get_phase_config(phase_num)
+    # Calculate current step and corresponding phase config
+    current_q_count = session.get("current_question_number", 0)
+    phase_num = get_phase_for_question(current_q_count + 1)
+    phase = get_phase_config(phase_num)
 
-  # Correctly calculate remaining in current phase using defined ranges
-  phase_range = PHASE_QUESTION_RANGES.get(phase_num, (1, 11))
-  phase_end = phase_range[1]
-  remaining_in_phase = phase_end - current_q_count
-  
-  # Also respect the global limit
-  remaining_total = settings.assessment_max_questions - current_q_count
-  
-  batch_size = min(3, remaining_in_phase, remaining_total)
-  batch_size = max(1, batch_size) 
+    # Force batch_size = 1 so assessment runs one conversational question at a time
+    batch_size = 1
 
-  conversation_history = session.get("adaptive_context", [])
-  covered_topics = extract_covered_topics(conversation_history)
-  qa_context = format_qa_pairs(conversation_history)
+    conversation_history = session.get("adaptive_context", [])
+    covered_topics = extract_covered_topics(conversation_history)
+    qa_context = format_qa_pairs(conversation_history)
 
-  system_content = QUESTION_SYSTEM_PROMPT.format(
-    user_type=user_profile.get("user_type", "individual"),
-    state=user_profile.get("state", "India"),
-    education_level=user_profile.get("education_level", "not specified"),
-    phase_name=phase["name"],
-    phase_goal=phase["goal"],
-    phase_instruction=phase["instruction"],
-    language="Hindi" if user_profile.get("preferred_lang") == "hi" else "English",
-    covered_topics=covered_topics,
-    phase_number=phase_num,
-    batch_size=batch_size,
-    background_context=_get_background_context(user_profile),
-    CONCISENESS_INSTRUCTION=CONCISENESS_INSTRUCTION
-  )
+    # Map profile properties to friendly terms
+    full_name = user_profile.get("full_name") or "User"
+    user_type_desc = _get_readable_user_type(user_profile.get("user_type", ""))
+    education_level = _get_readable_education(user_profile.get("education_level", ""))
+    state = user_profile.get("state") or "India"
+    
+    # Check language preference (Hindi/English)
+    preferred_lang = user_profile.get("preferred_lang")
+    if preferred_lang == "hi":
+        language_choice = "conversational Hindi (use Hindi words but write them in Devanagari script, keep questions simple and accessible)"
+    else:
+        language_choice = "clear, accessible English"
 
-  if qa_context and qa_context != "No answers recorded.":
-    system_content += f"\n\nPREVIOUS Q&A (Do NOT repeat these topics):\n{qa_context}"
+    system_content = QUESTION_SYSTEM_PROMPT.format(
+        full_name=full_name,
+        user_type_desc=user_type_desc,
+        state=state,
+        education_level=education_level,
+        phase_name=phase["name"],
+        phase_goal=phase["goal"],
+        phase_instruction=phase["instruction"],
+        language_choice=language_choice,
+        covered_topics=covered_topics,
+        phase_number=phase_num,
+        batch_size=batch_size,
+        background_context=_get_background_context(user_profile)
+    )
 
-  messages = [{"role": "system", "content": system_content}]
-  messages.extend(conversation_history)
+    if qa_context and qa_context != "No answers recorded.":
+        system_content += f"\n\nPREVIOUS QUESTIONS & ANSWERS IN THIS INTERVIEW:\n{qa_context}"
 
-  logger.info(f"[ASSESSMENT] Generating batch for user={user_profile.get('user_id')}. Phase={phase['name']}.")
+    messages = [{"role": "system", "content": system_content}]
+    cleaned_history = _clean_conversation_history(conversation_history)
+    messages.extend(cleaned_history)
 
-  batch_raw = await llm_provider.complete_json(
-    messages=messages,
-    config=LLM_TASKS["assessment"]
-  )
+    logger.info(f"[ASSESSMENT] Generating question {current_q_count + 1} (Phase {phase_num}) for user={full_name}.")
 
-  try:
-    if not batch_raw: raise ValueError("Empty response from LLM")
-    batch_obj = AssessmentBatchLLMOutput.model_validate(batch_raw).model_dump()
-  except Exception as e:
-    logger.error(f"[ASSESSMENT] Validation failed: {e}")
-    batch_obj = batch_raw if batch_raw else {"questions": []}
-    if "phase" not in batch_obj: batch_obj["phase"] = phase_num
-    if "phase_name" not in batch_obj: batch_obj["phase_name"] = phase["name"]
-    if not batch_obj.get("questions"):
-      batch_obj["questions"] = [{
-        "question": "Can you tell me more about your daily tasks?",
-        "question_type": "mcq",
-        "options": ["Very manual", "Mostly technical", "Supervisory"],
-        "allows_multiple": False, "allows_other": True, "skill_probing": "general tasks"
-      }]
-  return batch_obj
+    batch_raw = await llm_provider.complete_json(
+        messages=messages,
+        config=LLM_TASKS["assessment"]
+    )
+
+    # Validate output structure or fallback gracefully
+    try:
+        if not batch_raw:
+            raise ValueError("Empty response from local LLM")
+            
+        # Parse single question at root if LLM failed to wrap it in questions list
+        if "question" in batch_raw and "questions" not in batch_raw:
+            logger.warning("[ASSESSMENT] LLM returned single question at root. Wrapping in questions list.")
+            batch_raw["questions"] = [{
+                "question": batch_raw.pop("question"),
+                "question_type": batch_raw.pop("question_type", "text"),
+                "options": batch_raw.pop("options", []),
+                "allows_multiple": batch_raw.pop("allows_multiple", False),
+                "allows_other": batch_raw.pop("allows_other", True),
+                "skill_probing": batch_raw.pop("skill_probing", "general")
+            }]
+            
+        if "questions" in batch_raw and isinstance(batch_raw["questions"], dict):
+            batch_raw["questions"] = [batch_raw["questions"]]
+            
+        batch_obj = AssessmentBatchLLMOutput.model_validate(batch_raw).model_dump()
+    except Exception as e:
+        logger.error(f"[ASSESSMENT] Validation failed: {e}")
+        batch_obj = batch_raw if batch_raw else {"questions": []}
+        if "phase" not in batch_obj:
+            batch_obj["phase"] = phase_num
+        if "phase_name" not in batch_obj:
+            batch_obj["phase_name"] = phase["name"]
+        if not batch_obj.get("questions"):
+            # Provide a safe default question if AI failed completely
+            batch_obj["questions"] = [{
+                "question": "Can you describe a typical task you do in your daily routine?",
+                "question_type": "text",
+                "options": [],
+                "allows_multiple": False,
+                "allows_other": True,
+                "skill_probing": "general routine"
+            }]
+            
+    return batch_obj
 
 async def extract_skills_from_session(
-  session: dict,
-  user_profile: dict,
-  llm_provider: IStructuredProvider
+    session: dict,
+    user_profile: dict,
+    llm_provider: IStructuredProvider
 ) -> dict:
-  """Uses LLM for skill extraction from completed assessment."""
-  conversation_history = session.get("adaptive_context", [])
-  qa_pairs = format_qa_pairs(conversation_history)
+    conversation_history = session.get("adaptive_context", [])
+    qa_pairs = format_qa_pairs(conversation_history)
 
-  system_prompt = SKILL_EXTRACTION_SYSTEM_PROMPT.format(
-    user_type=user_profile.get("user_type", "individual"),
-    state=user_profile.get("state", "India"),
-    education_level=user_profile.get("education_level", "not specified"),
-    background_context=_get_background_context(user_profile),
-    CONCISENESS_INSTRUCTION=CONCISENESS_INSTRUCTION
-  )
+    # Format descriptors for final extraction run
+    full_name = user_profile.get("full_name") or "User"
+    user_type_desc = _get_readable_user_type(user_profile.get("user_type", ""))
+    education_level = _get_readable_education(user_profile.get("education_level", ""))
+    state = user_profile.get("state") or "India"
 
-  user_prompt = f"ASSESSMENT QA PAIRS:\n{qa_pairs}\n\nExtract insights now."
+    system_prompt = SKILL_EXTRACTION_SYSTEM_PROMPT.format(
+        full_name=full_name,
+        user_type_desc=user_type_desc,
+        state=state,
+        education_level=education_level,
+        background_context=_get_background_context(user_profile)
+    )
 
-  logger.info(f"[ASSESSMENT] Extracting skills for user={user_profile.get('user_id')}.")
+    user_prompt = f"ASSESSMENT QA PAIRS:\n{qa_pairs}\n\nPerform final extraction and write the report now."
 
-  extracted_raw = await llm_provider.complete_json(
-    messages=[
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt}
-    ],
-    config=LLM_TASKS["assessment_extraction"]
-  )
+    logger.info(f"[ASSESSMENT] Running final career report extraction for user={full_name}.")
 
-  try:
-    if not extracted_raw: raise ValueError("Empty response from LLM")
-    extracted = SkillExtractionLLMOutput.model_validate(extracted_raw).model_dump()
-  except Exception as e:
-    logger.error(f"[ASSESSMENT] Skill extraction validation failed: {e}")
-    extracted = SkillExtractionLLMOutput().model_dump()
+    extracted_raw = await llm_provider.complete_json(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        config=LLM_TASKS["assessment_extraction"]
+    )
 
-  return extracted
+    try:
+        if not extracted_raw:
+            raise ValueError("Empty response from extraction LLM")
+        extracted = SkillExtractionLLMOutput.model_validate(extracted_raw).model_dump()
+    except Exception as e:
+        logger.error(f"[ASSESSMENT] Skill extraction validation failed: {e}")
+        extracted = SkillExtractionLLMOutput().model_dump()
+
+    return extracted

@@ -32,7 +32,7 @@ class QuestionResponse(BaseSchema):
     options: List[str] = Field(default_factory=list)
     allows_multiple: bool = False
     allows_other: bool = True
-    skill_probing: str
+    skill_probing: str = "general"
 
 
 class AssessmentBatchResponse(BaseSchema):
@@ -95,3 +95,15 @@ class AssessmentHistoryItem(BaseSchema):
     completed_at: Optional[datetime] = None
     skills_count: int
     created_at: datetime
+
+
+class LatestAssessmentResponse(BaseSchema):
+    """Summary of the user's latest completed assessment session."""
+    session_id: str
+    is_complete: bool
+    skills_found: List[Any] = Field(default_factory=list)
+    assessment_summary: str
+    completed_at: Optional[datetime] = None
+    retakes_remaining: int
+    can_retake: bool
+
