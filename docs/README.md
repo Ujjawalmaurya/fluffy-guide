@@ -1,45 +1,48 @@
-# Backend Setup
+# Backend Documentation
+
+> For the main setup instructions, see the [Backend README](file:///home/um/Stuffs/SANKALP/backend/README.md).
 
 ## Requirements
-- Python 3.11+
-- pip 23+
+- Python 3.10+ (Python 3.11 recommended)
+- pip
+- Supabase account
 
-## Setup
+## Quick Setup
 
 ```bash
 # 1. Copy env file
 cp .env.example .env
-# Fill in the values — see variable descriptions below
 
-# 2. Install dependencies
+# 2. Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# 3. Install packages
 pip install -r requirements.txt
 
-# 3. Set up Supabase
-# - Create a project at supabase.com
-# - Go to Database → SQL Editor → New Query
-# - Paste the entire contents of supabase_schema.sql
-# - Run it
+# 4. Set up database in Supabase
+# - Open supabase.com -> SQL Editor -> New Query
+# - Paste contents of supabase_schema.sql and click Run
 
-# 4. Run the server
+# 5. Start the backend server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-## .env Variables
+## Environment Variables (`.env`)
 
 | Variable | Description |
 |---|---|
 | `SUPABASE_URL` | Your Supabase project URL |
-| `SUPABASE_SERVICE_KEY` | *service_role* key (NOT anon key) |
-| `JWT_SECRET_KEY` | Random secret, min 32 chars |
-| `SARVAM_API_KEY` | SarvamAI API key from api.sarvam.ai |
-| `ADMIN_SECRET` | Any string — sent as X-Admin-Secret header |
-| `CORS_ORIGINS` | Frontend URL (default: http://localhost:5173) |
+| `SUPABASE_SERVICE_KEY` | Supabase `service_role` secret key (not anon key) |
+| `JWT_SECRET_KEY` | Secret key for signing tokens (min 32 characters) |
+| `ADMIN_SECRET` | Secret password for job administration API |
+| `CORS_ORIGINS` | Frontend URL (`http://localhost:5173`) |
+| `OLLAMA_HOST` | Local Ollama address (`http://localhost:11434`) |
+| `SARVAM_API_KEY` | SarvamAI API key for Indian language support |
 
 ## Logs
+- Terminal Console: Live colored log messages
+- File: `logs/skillbridge.log` (auto-rotates at 10MB)
 
-- Console: colored, real-time
-- File: `logs/skillbridge.log` (auto-created, rotates at 10MB, retained 7 days)
-
-## OTP
-
-OTPs are **printed to the terminal**. Check server console after requesting a login.
+## Login OTP
+The 6-digit login code is printed directly in the **backend terminal window**.
