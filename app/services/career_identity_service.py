@@ -42,7 +42,7 @@ class CareerIdentityService:
 
     def build_career_identity(self, skills: List[str], experience: str, intent: str) -> str:
         """
-        Uses Llama-3-70B on Groq to synthesize a professional persona.
+        Synthesizes a professional persona using Groq or Gemini.
         This provides context that raw keywords lack.
         """
         prompt = f"""
@@ -57,24 +57,43 @@ class CareerIdentityService:
         """
         
         try:
-            res = self._get_groq().chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=200
-            )
-            identity = res.choices[0].message.content.strip()
-            log.info(f"Generated identity: {identity[:50]}...")
-            return identity
+            if settings.groq_api_key and groq is not None:
+                res = self._get_groq().chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=200
+                )
+                identity = res.choices[0].message.content.strip()
+                log.info(f"Generated identity: {identity[:50]}...")
+                return identity
         except Exception as e:
-            log.error(f"Groq generation failed: {e}")
-            # Fallback to simple concatenation if LLM fails
-            return f"Professional skilled in {', '.join(skills[:5])} with experience in {experience}. Goal: {intent}"
+            log.warning(f"Groq generation failed: {e}. Falling back to default summary.")
+
+        # Fallback to simple concatenation if LLM fails
+        return f"Professional skilled in {', '.join(skills[:5])} with experience in {experience}. Goal: {intent}"
 
     def embed_text(self, text: str) -> List[float]:
-        """Converts text to vector using local SentenceTransformer."""
-        embedding = self._get_encoder().encode(text).tolist()
-        return embedding
+        """Converts text to vector using Ollama nomic-embed-text with SentenceTransformer fallback."""
+        try:
+            import httpx
+            with httpx.Client(timeout=10.0) as client:
+                res = client.post(
+                    f"{settings.ollama_base_url}/api/embeddings",
+                    json={"model": "nomic-embed-text", "prompt": text}
+                )
+                if res.status_code == 200:
+                    embedding = res.json().get("embedding", [])
+                    if embedding:
+                        return embedding
+        except Exception:
+            pass
+
+        try:
+            return self._get_encoder().encode(text).tolist()
+        except Exception as e:
+            log.warning(f"Embedding generation fallback returned zeros: {e}")
+            return [0.0] * 384
 
     async def update_user_identity(self, user_id: str, skills: List[str], experience: str, intent: str):
         """Orchestrates generation, embedding, and saving to Supabase."""

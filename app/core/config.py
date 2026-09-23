@@ -3,7 +3,7 @@ Backend config — reads all settings from .env via Pydantic BaseSettings.
 Single source of truth for env vars. Import `settings` everywhere.
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, AliasChoices
 
 
 from app.core.ai_models import AIModel
@@ -37,11 +37,15 @@ class Settings(BaseSettings):
     log_level: str = "DEBUG"
     cors_origins: str = "http://localhost:5173"
 
-    # API Keys
-    gemini_api_key: str = ""
+    # AI Provider Keys
+    gemini_api_key: str = Field(default="", validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY"))
     groq_api_key: str = ""
     varcel_ai_key: str = ""
     enable_jev: bool = True
+
+    # Local Ollama
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5:1.5b"
 
     # ── Hardcoded config below ──────────
     @property
