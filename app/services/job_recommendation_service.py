@@ -66,12 +66,13 @@ class JobRecommendationService:
 
             from app.modules.ai_chat.providers.jev_provider import JevProvider
             jev = JevProvider()
+            score_results = await asyncio.gather(*[jev.score_job_match(profile, job) for job in raw_jobs])
             scored_jobs = []
-            for job in raw_jobs:
-                score_res = await jev.score_job_match(profile, job)
+            for job, score_res in zip(raw_jobs, score_results):
                 job_copy = dict(job)
                 job_copy["match_score"] = score_res.get("match_score", 50)
                 job_copy["meets_skills"] = score_res.get("meets_skills", True)
+                job_copy["matched_skills"] = score_res.get("matched_skills", [])
                 job_copy["experience_fit"] = score_res.get("experience_fit", "adequate")
                 scored_jobs.append(job_copy)
 
