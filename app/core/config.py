@@ -37,8 +37,9 @@ class Settings(BaseSettings):
     log_level: str = "DEBUG"
     cors_origins: str = "http://localhost:5173"
 
-    # Ollama
+    # Ollama & Hardware Profile
     ollama_host: str = "http://localhost:11434"
+    use_rtx_4050: bool = True  # True = RTX 4050 (6GB VRAM), False = GTX 1050 (4GB VRAM)
 
     # Assessment
     assessment_max_questions: int = 11
