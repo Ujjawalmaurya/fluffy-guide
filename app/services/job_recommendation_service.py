@@ -59,12 +59,24 @@ class JobRecommendationService:
                 "filter_state": user_state
             }).execute()
 
-            if not recommendations.data:
+            raw_jobs = recommendations.data or []
+            if not raw_jobs:
                 logger.info(f"No vector matches found for user {user_id}")
-                # Fallback to category-based matching if vector search yields nothing
-                return await JobRecommendationService._fallback_recommendations(user_id, limit)
+                raw_jobs = await JobRecommendationService._fallback_recommendations(user_id, limit)
 
-            return recommendations.data
+            from app.modules.ai_chat.providers.jev_provider import JevProvider
+            jev = JevProvider()
+            scored_jobs = []
+            for job in raw_jobs:
+                score_res = await jev.score_job_match(profile, job)
+                job_copy = dict(job)
+                job_copy["match_score"] = score_res.get("match_score", 50)
+                job_copy["meets_skills"] = score_res.get("meets_skills", True)
+                job_copy["experience_fit"] = score_res.get("experience_fit", "adequate")
+                scored_jobs.append(job_copy)
+
+            scored_jobs.sort(key=lambda j: j.get("match_score", 0), reverse=True)
+            return scored_jobs[:limit]
 
         except Exception as e:
             logger.error(f"Error during vector matching: {str(e)}")

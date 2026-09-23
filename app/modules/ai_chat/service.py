@@ -27,10 +27,13 @@ SYSTEM_PROMPT_HI = """आप SkillBridge AI हैं, भारत के क�
 संरचना के लिए Markdown का उपयोग करें (जैसे **मोटा अक्षर**, सूचियाँ)।"""
 
 
+from app.modules.ai_chat.providers.jev_provider import JevProvider
+
 class ChatService:
     def __init__(self, repo: ChatRepository):
         self.repo = repo
         self.provider = GeminiProvider()
+        self.jev = JevProvider()
 
     def _get_provider(self, language: str) -> ILLMProvider:
         return self.provider
@@ -76,6 +79,16 @@ class ChatService:
     ) -> AsyncGenerator[str, None]:
         # Save user message
         self.repo.add_message(user_id, "user", content, language)
+
+        # Jev System 1 Guardrail & Triage
+        triage = await self.jev.check_chat_guardrails(content)
+        if not triage.get("is_safe", True):
+            yield "I am here to help you with your career and professional growth. Please let me know how I can support your learning or job search goals."
+            return
+
+        if triage.get("is_distress", False):
+            yield "It sounds like you are going through a very tough time. Please reach out to trusted friends, family, or professional helpline services. Your well-being comes first."
+            return
 
         history = self.repo.get_history(user_id, limit=11)
         system_prompt = self._build_system_prompt(user, profile, prefs, language)

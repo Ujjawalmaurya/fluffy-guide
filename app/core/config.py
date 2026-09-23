@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str
 
     # SarvamAI
-    sarvam_api_key: str
+    sarvam_api_key: str = ""
 
     # Admin
     admin_secret: str
@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     gemini_api_key: str = ""
     groq_api_key: str = ""
+    varcel_ai_key: str = ""
+    enable_jev: bool = True
 
     # ── Hardcoded config below ──────────
     @property
