@@ -46,11 +46,10 @@ Return ONLY this JSON. No other text before or after:
 }}
 
 Notes on question_type:
-- Use "mcq" when there are 3-4 clear distinct choices
-- Use "rating" for questions about confidence or frequency
-- Use "text" for open-ended reflective questions
-- For "mcq": provide options array with 3-4 short items
-- For "rating" and "text": options must be null
+- STRICT ALIGNMENT: If the question asks to describe, explain, or answer in words, question_type MUST be "text" and options must be null.
+- Use "rating" ONLY when the question explicitly asks for a numerical rating (e.g. "On a scale of 1 to 5, rate your confidence with..."). NEVER ask the user to explain or describe when question_type is "rating".
+- Use "mcq" when there are 3-4 clear distinct choices with options array provided.
+- For "text" and "rating": options must be null or empty list.
 """
 
 SKILL_EXTRACTION_PROMPT = """
@@ -227,6 +226,9 @@ async def generate_next_question(
       retry_messages, max_tokens=200
     )
     question_obj = json.loads(strip_markdown_fences(response_text))
+
+  from app.modules.onboarding.question_sanitizer import sanitize_question
+  question_obj = sanitize_question(question_obj)
 
   logger.info(
     f"[ASSESSMENT] Q{next_q_number} generated. "

@@ -38,9 +38,11 @@ The JSON array must have this exact structure:
 
 Rules:
 - Questions should assess current skills, work experience, and career goals.
-- Use the "options" array ONLY for "mcq" type questions.
-- For "rating" type questions, include options like ["1","2","3","4","5"].
-- For "text" type questions, the options array MUST be empty []."""
+- STRICT ALIGNMENT: If a question asks to describe, explain, or answer in words, type MUST be "text" and options MUST be [].
+- Rating questions MUST strictly be phrased as a rating scale (e.g. "Rate your experience with X from 1 to 5:"). NEVER ask for a description or words if type is "rating".
+- For "rating", options MUST be ["1","2","3","4","5"].
+- For "mcq", options MUST contain 3 to 5 realistic choices.
+- For "text", options MUST be []."""
 
 def build_user_prompt(user_type: str, state: str, career_interests: list[str], language: str) -> str:
     hint = USER_TYPE_HINTS.get(user_type, "Ask about skills, goals, and work experience.")
@@ -110,6 +112,8 @@ async def generate_questions(user_type: str, state: str, career_interests: list[
             content = content[start_idx : end_idx + 1]
             
         questions = json.loads(content.strip())
+        from app.modules.onboarding.question_sanitizer import sanitize_question_list
+        questions = sanitize_question_list(questions)
         log.info(f"Generated {len(questions)} questions for {user_type} via SarvamAI")
         return questions
     except Exception as e:
