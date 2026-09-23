@@ -4,7 +4,6 @@
 
 import io
 import json
-import pdfplumber
 import docx
 from loguru import logger
 
@@ -75,11 +74,8 @@ async def parse_resume(file_bytes: bytes, filename: str, content_type: str, user
     
     try:
         if filename.lower().endswith(".pdf"):
-            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-                for page in pdf.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text += page_text + "\n"
+            from services.pdf_extractor import extract_resume_text
+            text = extract_resume_text(file_bytes)
         elif filename.lower().endswith(".docx"):
             doc = docx.Document(io.BytesIO(file_bytes))
             text = "\n".join([para.text for para in doc.paragraphs])
