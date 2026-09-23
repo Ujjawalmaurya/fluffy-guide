@@ -5,7 +5,8 @@ Dependency-injected: receives ILLMProvider, so test with MockLLMProvider if need
 from typing import AsyncGenerator
 
 from app.modules.ai_chat.providers.base import ILLMProvider
-from app.modules.ai_chat.providers.gemini import GeminiProvider
+from app.modules.ai_chat.providers.ollama_provider import OllamaProvider, get_ollama_instance
+from app.modules.ai_chat.providers.jev_provider import JevProvider
 from app.modules.ai_chat.repository import ChatRepository
 from app.core.logger import get_logger
 
@@ -14,7 +15,7 @@ log = get_logger("AI_CHAT")
 SYSTEM_PROMPT_EN = """You are SkillBridge AI, a friendly career guidance assistant for India's workforce. \
 User's name is {name}, type is {user_type}, location is {state}. \
 Their career interests are {interests}. \
-Help them with career advice, skill recommendations, and job search tips. Be concise and practical, little bit engaging.
+Help them with career advice, skill recommendations, and job search tips. Be concise and practical, engaging and direct.
 Respond in English or Hinglish (Hindi + English) based on how the user talks to you.
 Use Markdown for structure (e.g., **bold**, lists).
 Never include <think> or <thinking> tags in responses. Return only the final answer.
@@ -23,16 +24,13 @@ Never include <think> or <thinking> tags in responses. Return only the final ans
 SYSTEM_PROMPT_HI = """आप SkillBridge AI हैं, भारत के कार्यबल के लिए एक मित्रवत करियर मार्गदर्शन सहायक। \
 उपयोगकर्ता का नाम {name} है, प्रकार {user_type} है, स्थान {state} है। \
 उनके करियर हितों में {interests} शामिल हैं। \
-केवल शुद्ध और स्पष्ट हिंदी में उत्तर दें (Strictly respond in proper Hindi only). करियर सलाह, कौशल सिफारिशें और नौकरी खोज युक्तियाँ दें। प्रोत्साहित करें। \
+केवल स्पष्ट हिंदी में उत्तर दें। करियर सलाह, कौशल सिफारिशें और नौकरी खोज युक्तियाँ दें। \
 संरचना के लिए Markdown का उपयोग करें (जैसे **मोटा अक्षर**, सूचियाँ)।"""
-
-
-from app.modules.ai_chat.providers.jev_provider import JevProvider
 
 class ChatService:
     def __init__(self, repo: ChatRepository):
         self.repo = repo
-        self.provider = GeminiProvider()
+        self.provider = get_ollama_instance()
         self.jev = JevProvider()
 
     def _get_provider(self, language: str) -> ILLMProvider:

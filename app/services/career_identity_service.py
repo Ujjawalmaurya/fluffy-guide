@@ -32,17 +32,9 @@ class CareerIdentityService:
             self._encoder = SentenceTransformer('all-MiniLM-L6-v2')
         return self._encoder
 
-    def _get_groq(self):
-        """Lazily initialise Groq client."""
-        if self._groq is None:
-            if groq is None:
-                raise RuntimeError("groq package is not installed.")
-            self._groq = groq.Groq(api_key=settings.groq_api_key)
-        return self._groq
-
     def build_career_identity(self, skills: List[str], experience: str, intent: str) -> str:
         """
-        Synthesizes a professional persona using Groq or Gemini.
+        Synthesizes a professional persona using local Ollama model.
         This provides context that raw keywords lack.
         """
         prompt = f"""
@@ -57,20 +49,25 @@ class CareerIdentityService:
         """
         
         try:
-            if settings.groq_api_key and groq is not None:
-                res = self._get_groq().chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.3,
-                    max_tokens=200
+            import httpx
+            with httpx.Client(timeout=10.0) as client:
+                res = client.post(
+                    f"{settings.ollama_base_url}/api/chat",
+                    json={
+                        "model": settings.ollama_model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "stream": False,
+                        "options": {"temperature": 0.3, "num_predict": 200}
+                    }
                 )
-                identity = res.choices[0].message.content.strip()
-                log.info(f"Generated identity: {identity[:50]}...")
-                return identity
+                if res.status_code == 200:
+                    identity = res.json().get("message", {}).get("content", "").strip()
+                    if identity:
+                        log.info(f"Generated identity: {identity[:50]}...")
+                        return identity
         except Exception as e:
-            log.warning(f"Groq generation failed: {e}. Falling back to default summary.")
+            log.warning(f"Local Ollama identity generation failed: {e}. Falling back to default summary.")
 
-        # Fallback to simple concatenation if LLM fails
         return f"Professional skilled in {', '.join(skills[:5])} with experience in {experience}. Goal: {intent}"
 
     def embed_text(self, text: str) -> List[float]:
