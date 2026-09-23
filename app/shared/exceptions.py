@@ -138,7 +138,7 @@ class GroqFailed(AppError):
     def __init__(self): super().__init__("GROQ_FAILED", "The AI rewriter is temporarily unavailable.", 503)
 
 class GapAnalysisNoSkills(AppError):
-    def __init__(self): super().__init__("GAP_ANALYSIS_NO_SKILLS", "Complete your assessment or upload a resume first. We need to know your skills before analyzing gaps.", 400)
+    def __init__(self): super().__init__("GAP_ANALYSIS_NO_SKILLS", "Upload a resume or select your skills first. We need to know your skills before analyzing gaps.", 400)
     # log_level: INFO
 
 class GapAnalysisNoJobs(AppError):

@@ -43,22 +43,26 @@ class ProfileService:
         if len(file_bytes) > MAX_RESUME_SIZE:
             raise ResumeTooLarge()
 
-        from app.modules.ai_chat.providers.gemini import get_gemini_instance
-        from app.modules.ai_chat.providers.groq_provider import GroqProvider
+        from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
+        from app.modules.ai_chat.providers.jev_provider import JevProvider
 
-        gemini = get_gemini_instance()
-        groq = GroqProvider() # Assumes env vars are set
+        ollama = get_ollama_instance()
+        jev = JevProvider()
 
-        # 1. Basic Parsing (Flash)
-        result = await resume_parser.parse_resume(file_bytes, filename, content_type, user_id, gemini)
+        # 1. Parsing with local high-context Ollama
+        result = await resume_parser.parse_resume(file_bytes, filename, content_type, user_id, ollama)
         raw_text = result["raw_text"]
 
-        # 2. Parallel Deep Analysis
-        ats_task = resume_parser.score_ats(raw_text, gemini)
-        india_task = resume_parser.extract_india_details(raw_text, gemini)
-        achievements_task = resume_parser.detect_achievements(raw_text, groq)
+        # 2. Fast Deep Analysis
+        ats_task = resume_parser.score_ats(raw_text, ollama)
+        india_task = resume_parser.extract_india_details(raw_text, ollama)
+        achievements_task = resume_parser.detect_achievements(raw_text, ollama)
+        jev_flags_task = jev.evaluate_resume_ats_flags(raw_text)
 
-        ats_res, india_res, achievements_res = await asyncio.gather(ats_task, india_task, achievements_task)
+        ats_res, india_res, achievements_res, jev_flags = await asyncio.gather(
+            ats_task, india_task, achievements_task, jev_flags_task
+        )
+        ats_res.update(jev_flags)
 
         # 3. Store Enrichment
         full_parsed = {
@@ -100,10 +104,10 @@ class ProfileService:
         if count >= limit:
             raise RateLimitExceeded(msg=f"Daily limit of {limit} reached.")
 
-        from app.modules.ai_chat.providers.groq_provider import GroqProvider
-        groq = GroqProvider()
+        from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
+        ollama = get_ollama_instance()
         
-        result = await resume_parser.rewrite_bullets(bullets, groq)
+        result = await resume_parser.rewrite_bullets(bullets, ollama)
         rewritten = result.get("rewritten_bullets", bullets)
 
         self.repo.increment_rewrite_count(user_id)

@@ -9,7 +9,7 @@ logger = get_logger("GAP_ANALYSIS")
 
 class GAP_ANALYSIS_NO_SKILLS(AppError):
     def __init__(self):
-        super().__init__("GAP_ANALYSIS_NO_SKILLS", "You need to add some skills or take an assessment first.", 400)
+        super().__init__("GAP_ANALYSIS_NO_SKILLS", "You need to add skills or upload a resume first.", 400)
 
 class GAP_ANALYSIS_NO_JOBS(AppError):
     def __init__(self):

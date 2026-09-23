@@ -1,7 +1,5 @@
 import json
 from loguru import logger
-from fastapi import HTTPException
-from app.modules.ai_chat.providers.gemini import get_gemini_instance
 from models.resume_analysis_models import StructuredProfile, Skill
 from services.pdf_extractor import extract_resume_text
 
@@ -103,44 +101,29 @@ def normalize_ai_output(data: dict) -> dict:
 
     return data
 
+from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
+
 async def extract_structured_profile(raw_text: str) -> StructuredProfile:
     """
-    Takes raw resume text and returns a StructuredProfile using Gemini 1.5 Flash.
+    Takes raw resume text and returns a StructuredProfile using local high-context Ollama model.
     """
-    gemini = get_gemini_instance()
-    
+    ollama = get_ollama_instance()
+
     messages = [
         {"role": "system", "content": RESUME_EXTRACTION_PROMPT},
         {"role": "user", "content": f"Resume Text:\n{raw_text}"}
     ]
-    
-    logger.info("[RESUME_ANALYSIS] starting Gemini extraction...")
-    
+
+    logger.info("[RESUME_ANALYSIS] starting local Ollama extraction...")
+
     try:
-        # Use the specialized lite model for resume depth analysis as requested
-        response_text = await gemini.complete(messages, model_name="gemini-2.0-flash-lite-preview-02-05")
-        
-        # Strip potential markdown fences
-        clean_json = response_text.strip()
-        if clean_json.startswith("```json"):
-            clean_json = clean_json[7:-3].strip()
-        elif clean_json.startswith("```"):
-            clean_json = clean_json[3:-3].strip()
-            
-        data = json.loads(clean_json)
-        
-        # Normalize and Validate
+        data = await ollama.complete_json(messages, temperature=0.2, max_tokens=3000)
         clean_data = normalize_ai_output(data)
         profile = StructuredProfile(**clean_data)
-        
+
         logger.info(f"[RESUME_ANALYSIS] extraction_complete skills_count={len(profile.skills)}")
         return profile
-        
-    except json.JSONDecodeError as e:
-        logger.error(f"[RESUME_ANALYSIS] extraction_failed: JSON parse error. Response snippet: {response_text[:200]}")
-        # Partial recovery: return empty profile if AI fails completely
-        return StructuredProfile()
+
     except Exception as e:
-        logger.error(f"[RESUME_ANALYSIS] extraction_failed: {str(e)}")
-        # Partial recovery: return empty profile instead of crashing
+        logger.error(f"[RESUME_ANALYSIS] extraction_failed: {e}")
         return StructuredProfile()

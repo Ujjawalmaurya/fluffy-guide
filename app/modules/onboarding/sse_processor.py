@@ -19,10 +19,8 @@ def _sse_event(step: int, progress: int, message: str, status: str) -> str:
 
 def _extract_skills_from_text(text: str) -> list[str]:
     """
-    Basic keyword match against common Indian workforce skills.
-    Used only for onboarding quick-extraction — not the same as resume parsing.
+    Keyword match against common workforce skills plus comma-separated token recognition.
     """
-    # Common skills for quick keyword match during onboarding
     SKILL_KEYWORDS = [
         "python", "java", "javascript", "html", "css", "react", "nodejs", "sql",
         "excel", "tally", "ms office", "word", "powerpoint", "data analysis",
@@ -35,9 +33,17 @@ def _extract_skills_from_text(text: str) -> list[str]:
         "customer service", "sales", "retail", "cashier",
         "autocad", "photoshop", "video editing", "graphic design",
         "machine operator", "quality control", "data entry",
+        "docker", "kubernetes", "flutter", "aws", "git"
     ]
     text_lower = text.lower()
-    return [skill for skill in SKILL_KEYWORDS if skill.lower() in text_lower]
+    matched = {skill for skill in SKILL_KEYWORDS if skill.lower() in text_lower}
+
+    for token in text.split(","):
+        cleaned = token.strip()
+        if 2 <= len(cleaned) <= 30 and not cleaned.startswith("{") and not cleaned.startswith("["):
+            matched.add(cleaned)
+
+    return sorted(list(matched))
 
 
 async def process_stream(session_id: str, repo: OnboardingRepository) -> AsyncGenerator[str, None]:

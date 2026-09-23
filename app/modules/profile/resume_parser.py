@@ -10,7 +10,7 @@ except ImportError:
     docx = None
 from loguru import logger
 
-from app.modules.ai_chat.providers.gemini import GeminiProvider
+from app.modules.ai_chat.providers.base import ILLMProvider
 from app.shared.exceptions import ResumeNoText, GeminiParseError
 
 # Optimized prompt for lower token usage and deeper insights
@@ -70,7 +70,7 @@ Return as:
 {{rewritten_bullets: ["new bullet 1", "new bullet 2", ...]}}"""
 
 async def parse_resume(file_bytes: bytes, filename: str, content_type: str, user_id: str,
-                       gemini_provider: GeminiProvider) -> dict:
+                       provider: ILLMProvider) -> dict:
     
     logger.info(f"[RESUME_PARSER] Extracting text for user={user_id} file={filename}")
     text = ""
@@ -91,18 +91,11 @@ async def parse_resume(file_bytes: bytes, filename: str, content_type: str, user
     if len(text.strip()) < 50:
         logger.warning(f"[RESUME_PARSER] Minimal text found for user={user_id}")
         raise ResumeNoText()
-        
-    # Token optimization: limit to 4000 chars for analysis
-    if len(text) > 4000:
-        text = text[:4000]
-        logger.info("[RESUME_PARSER] Truncated to 4000 chars for efficiency")
-        
+
     formatted_prompt = RESUME_EXTRACTION_PROMPT.format(resume_text=text)
     
-    # Retry logic is handled inside gemini_provider.complete (backoff)
-    response = await gemini_provider.complete([{"role": "user", "content": formatted_prompt}])
+    response = await provider.complete([{"role": "user", "content": formatted_prompt}])
     
-    # Clean JSON output
     clean_json = response.strip()
     if "```" in clean_json:
         clean_json = clean_json.split("```")[1]
@@ -123,29 +116,26 @@ async def parse_resume(file_bytes: bytes, filename: str, content_type: str, user
         "raw_text": text
     }
 
-async def score_ats(text: str, gemini_provider: GeminiProvider) -> dict:
-    # Use gemini-1.5-pro for better scoring reasoning
-    response = await gemini_provider.complete(
-        [{"role": "user", "content": ATS_SCORING_PROMPT.format(resume_text=text)}],
-        model_name="gemini-1.5-pro"
+async def score_ats(text: str, provider: ILLMProvider) -> dict:
+    response = await provider.complete(
+        [{"role": "user", "content": ATS_SCORING_PROMPT.format(resume_text=text)}]
     )
     return _parse_json(response)
 
-async def extract_india_details(text: str, gemini_provider: GeminiProvider) -> dict:
-    response = await gemini_provider.complete(
+async def extract_india_details(text: str, provider: ILLMProvider) -> dict:
+    response = await provider.complete(
         [{"role": "user", "content": INDIA_QUALIFICATIONS_PROMPT.format(resume_text=text)}]
     )
     return _parse_json(response)
 
-async def detect_achievements(text: str, groq_provider) -> dict:
-    # groq_provider is usually faster for this type of detection
-    response = await groq_provider.complete(
+async def detect_achievements(text: str, provider: ILLMProvider) -> dict:
+    response = await provider.complete(
         [{"role": "user", "content": ACHIEVEMENT_DETECTION_PROMPT.format(resume_text=text)}]
     )
     return _parse_json(response)
 
-async def rewrite_bullets(bullets: list[str], groq_provider) -> dict:
-    response = await groq_provider.complete(
+async def rewrite_bullets(bullets: list[str], provider: ILLMProvider) -> dict:
+    response = await provider.complete(
         [{"role": "user", "content": BULLET_REWRITE_PROMPT.format(bullets=json.dumps(bullets))}]
     )
     return _parse_json(response)

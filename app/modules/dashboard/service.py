@@ -36,14 +36,13 @@ class DashboardService:
            for s in skills_data if isinstance(s, dict) and (s.get("skill_name") or s.get("name"))
         ]
 
-        # Check if assessment is done
-        user_row = db.table("users").select(
-           "quick_assessment_done"
-        ).eq("id", user_id).limit(1).execute()
-        assessment_done = (
-           user_row.data[0].get("quick_assessment_done", False)
-           if user_row.data else False
-        )
+        # Check resume analysis status
+        resume_row = db.table("resume_analysis").select(
+           "overall_score, quality_scores, updated_at"
+        ).eq("user_id", user_id).limit(1).execute()
+        resume_data = resume_row.data[0] if resume_row.data else None
+        has_resume = resume_data is not None
+        ats_score = resume_data.get("overall_score", 0) if resume_data else 0
 
         # Check gap analysis report status
         gap_row = db.table("gap_analysis_reports").select(
@@ -66,9 +65,11 @@ class DashboardService:
             },
             "profile_completion_pct": completion_pct,
             "onboarding_done": user.get("onboarding_done", False),
-            "quick_assessment_done": assessment_done,
+            "quick_assessment_done": has_resume,
+            "resume_analysis_done": has_resume,
+            "ats_score": ats_score,
             "assessment_status": {
-                "has_completed": assessment_done,
+                "has_completed": has_resume,
             },
             "gap_analysis_done": gap_report is not None,
             "gap_analysis_status": {

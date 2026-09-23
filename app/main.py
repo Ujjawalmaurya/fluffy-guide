@@ -17,7 +17,6 @@ from app.modules.dashboard.router import router as dashboard_router
 from app.modules.jobs.router import router as jobs_router
 from app.modules.ai_chat.router import router as chat_router
 from app.modules.skill_profile.router import router as skill_router
-from app.modules.assessment.router import router as assessment_router
 from app.modules.gap_analysis.router import router as gap_router
 from app.modules.learning_resources.router import router as resources_router
 from app.modules.recommendations.router import router as recommendations_router
@@ -59,7 +58,6 @@ app.include_router(dashboard_router)
 app.include_router(jobs_router)
 app.include_router(chat_router)
 app.include_router(skill_router)
-app.include_router(assessment_router)
 app.include_router(gap_router)
 app.include_router(resources_router)
 app.include_router(recommendations_router)

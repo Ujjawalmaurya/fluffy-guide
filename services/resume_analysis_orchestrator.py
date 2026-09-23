@@ -91,6 +91,28 @@ async def analyze_resume_pipeline(
     except Exception as e:
         logger.error(f"[RESUME_ORCHESTRATOR] Database persistence failed: {str(e)}")
         # We still return the result so the user gets immediate feedback
-    
+
+    # 7. Auto-sync skills to user_skill_profiles
+    try:
+        if profile.skills:
+            from app.modules.skill_profile import aggregator as skill_aggregator
+            from app.modules.skill_profile.repository import SkillProfileRepository
+            from app.core.database import get_supabase
+            db = get_supabase()
+            skill_repo = SkillProfileRepository(db)
+            parsed_skills = [
+                {
+                    "name": s.name,
+                    "proficiency_label": s.level or "intermediate",
+                    "category": "technical",
+                    "confidence_score": 0.95
+                }
+                for s in profile.skills
+            ]
+            await skill_aggregator.merge_from_resume(user_id, parsed_skills, skill_repo)
+            logger.info(f"[RESUME_ORCHESTRATOR] Merged {len(parsed_skills)} skills into user_skill_profiles for user={user_id}")
+    except Exception as e:
+        logger.error(f"[RESUME_ORCHESTRATOR] Skill sync failed: {e}")
+
     logger.info(f"[RESUME_ORCHESTRATOR] Pipeline complete. Score: {result.overall_score}")
     return result

@@ -66,7 +66,7 @@ class OnboardingService:
     def submit_answers(self, user_id: str, data: SubmitAnswersIn) -> str:
         session = self.repo.get_latest_session(user_id)
         if not session:
-            raise OnboardingStepIncomplete("Generate questions first (step 4).")
+            session = self.repo.create_questionnaire_session(user_id, "en", [])
 
         answers_list = [a.model_dump() for a in data.answers]
         self.repo.submit_answers(session["id"], answers_list)
