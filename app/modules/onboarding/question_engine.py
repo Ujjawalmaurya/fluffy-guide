@@ -58,64 +58,37 @@ Generate the 6 questions now."""
 
 
 async def generate_questions(user_type: str, state: str, career_interests: list[str], language: str) -> list[dict]:
-    """Call SarvamAI and return parsed question list."""
+    """Generate career assessment questions via local Ollama provider."""
     system_prompt = build_system_prompt()
     user_prompt = build_user_prompt(user_type, state, career_interests, language)
 
-    headers = {
-        "Authorization": f"Bearer {settings.sarvam_api_key}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": settings.sarvam_model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "temperature": 0.7,
-    }
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{settings.sarvam_base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-            )
-            resp.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        log.error(f"SarvamAI HTTP error: {e.response.status_code} - {e.response.text}")
-        raise AIProviderUnavailable()
-    except Exception as e:
-        log.error(f"SarvamAI request failed: {e}")
-        raise AIProviderUnavailable()
+        from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
+        ollama = get_ollama_instance()
+        questions = await ollama.complete_json(messages, temperature=0.5, max_tokens=1500)
+        if isinstance(questions, dict) and "questions" in questions:
+            questions = questions["questions"]
+        elif not isinstance(questions, list):
+            questions = []
 
-    try:
-        content = resp.json()["choices"][0]["message"]["content"]
-        log.error(f"RAW SARVAM RESPONSE: {content}")
-        # Strip markdown code blocks if present
-        content = content.strip()
-        if "```" in content:
-            # Try to extract content between the first and second ```
-            parts = content.split("```")
-            if len(parts) >= 3:
-                content = parts[1]
-                if content.startswith("json\n"):
-                    content = content[5:]
-                elif content.startswith("json"):
-                    content = content[4:]
-        
-        # Additionally find the first [ and last ] in the string to ignore <think> tags or conversational prefixes
-        start_idx = content.find("[")
-        end_idx = content.rfind("]")
-        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-            content = content[start_idx : end_idx + 1]
-            
-        questions = json.loads(content.strip())
         from app.modules.onboarding.question_sanitizer import sanitize_question_list
         questions = sanitize_question_list(questions)
-        log.info(f"Generated {len(questions)} questions for {user_type} via SarvamAI")
+        log.info(f"Generated {len(questions)} questions for {user_type} via local Ollama ({ollama.model})")
         return questions
     except Exception as e:
-        log.error(f"Failed to parse SarvamAI response: {e}")
-        raise AIResponseParseError()
+        log.error(f"Failed to generate questions with local Ollama: {e}")
+        fallback = [
+            {"id": "q1", "question": "Describe your daily work responsibilities and the primary tools you use.", "type": "text", "options": []},
+            {"id": "q2", "question": "On a scale of 1 to 5, rate your proficiency with computer applications.", "type": "rating", "options": ["1", "2", "3", "4", "5"]},
+            {"id": "q3", "question": "Which work environment suits you best?", "type": "mcq", "options": ["Office desk work", "Field and on-site", "Hybrid / remote", "Factory or workshop"]},
+            {"id": "q4", "question": "In a few words, tell us about a challenging project or task you completed.", "type": "text", "options": []},
+            {"id": "q5", "question": "What is your main career goal for the next 12 to 24 months?", "type": "text", "options": []},
+            {"id": "q6", "question": "On a scale of 1 to 5, rate your confidence in learning new technical skills quickly.", "type": "rating", "options": ["1", "2", "3", "4", "5"]},
+        ]
+        from app.modules.onboarding.question_sanitizer import sanitize_question_list
+        return sanitize_question_list(fallback)
