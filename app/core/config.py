@@ -38,7 +38,6 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
 
     # API Keys
-    openai_api_key: str = ""
     gemini_api_key: str = ""
     groq_api_key: str = ""
     varcel_ai_key: str = ""
@@ -61,13 +60,6 @@ class Settings(BaseSettings):
     def sarvam_base_url(self) -> str: return "https://api.sarvam.ai/v1"
     @property
     def sarvam_model(self) -> str: return "sarvam-m"
-
-    @property
-    def openai_model(self) -> str: return AIModel.GPT_4O_MINI
-    @property
-    def openai_max_retries(self) -> int: return 3
-    @property
-    def openai_rpm_limit(self) -> int: return 3
 
     @property
     def gemini_model(self) -> str: return AIModel.GEMINI_1_5_FLASH

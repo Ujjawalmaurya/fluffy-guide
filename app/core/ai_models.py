@@ -3,9 +3,6 @@ Centralized AI model names to avoid hardcoded strings across the codebase.
 """
 
 class AIModel:
-    # OpenAI
-    GPT_4O_MINI = "gpt-4o-mini"
-    
     # Gemini
     GEMINI_1_5_FLASH = "gemini-1.5-flash"
     

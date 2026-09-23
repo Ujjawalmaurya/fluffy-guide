@@ -13,7 +13,7 @@ from app.core.database import get_supabase
 from app.core.logger import get_logger
 from app.core.config import settings
 from app.shared.exceptions import (
-    OpenAIRateLimit, GeminiRateLimit, GeminiParseError, AppError
+    GeminiRateLimit, GeminiParseError, AppError
 )
 
 logger = get_logger("ASSESSMENT")
@@ -100,15 +100,24 @@ async def check_retake_eligibility(user_id: str) -> dict:
     }
 
 
+def _get_default_provider():
+    from app.modules.ai_chat.providers.gemini import get_gemini_instance
+    gemini = get_gemini_instance()
+    if getattr(gemini, "model", None) is not None:
+        return gemini
+    from app.modules.ai_chat.providers.groq_provider import GroqProvider
+    return GroqProvider()
+
 async def start_assessment(
     user_id: str,
     user_profile: dict,
-    openai_provider
+    llm_provider=None
 ) -> dict:
     """
     Starts a new assessment or resumes an existing incomplete one.
     Returns first question + session metadata.
     """
+    provider = llm_provider or _get_default_provider()
     eligibility = await check_retake_eligibility(user_id)
     if not eligibility["eligible"]:
         raise ASSESSMENT_NO_RETAKES(
@@ -123,7 +132,7 @@ async def start_assessment(
         
         # Re-generate the question for the current position
         question = await adaptive_engine.generate_next_question(
-            session, {**user_profile, "user_id": user_id}, openai_provider
+            session, {**user_profile, "user_id": user_id}, provider
         )
         logger.info(
             f"[ASSESSMENT] Resuming session for user={user_id}. "
@@ -154,7 +163,7 @@ async def start_assessment(
     )
     
     question = await adaptive_engine.generate_next_question(
-        session, {**user_profile, "user_id": user_id}, openai_provider
+        session, {**user_profile, "user_id": user_id}, provider
     )
     
     # Save first question to adaptive_context
@@ -184,12 +193,13 @@ async def submit_answer(
     answer: str,
     user_id: str,
     user_profile: dict,
-    openai_provider
+    llm_provider=None
 ) -> dict:
     """
     Accepts user answer, appends to context, generates next question
     OR completes the assessment if max questions reached.
     """
+    provider = llm_provider or _get_default_provider()
     session = await repository.get_session_by_id(session_id, user_id)
     if not session:
         raise ValueError("Session not found or does not belong to user")
@@ -228,7 +238,7 @@ async def submit_answer(
     
     if is_complete:
         return await _complete_assessment(
-            session_id, user_id, new_context, user_profile, openai_provider
+            session_id, user_id, new_context, user_profile, provider
         )
         
     # Generate next question
@@ -241,7 +251,7 @@ async def submit_answer(
     question = await adaptive_engine.generate_next_question(
         updated_session,
         {**user_profile, "user_id": user_id},
-        openai_provider
+        provider
     )
     
     new_context.append({
@@ -273,7 +283,7 @@ async def _complete_assessment(
     user_id: str,
     final_context: list,
     user_profile: dict,
-    openai_provider
+    llm_provider
 ) -> dict:
     """
     Internal: finalizes assessment, extracts skills, updates profile.
@@ -285,7 +295,7 @@ async def _complete_assessment(
     extracted = await adaptive_engine.extract_skills_from_session(
         temp_session,
         {**user_profile, "user_id": user_id},
-        openai_provider
+        llm_provider
     )
     
     skills = extracted.get("skills", [])

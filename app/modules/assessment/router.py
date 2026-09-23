@@ -43,6 +43,14 @@ async def _get_user_profile(current_user: dict) -> dict:
         "user_id": user_id
     }
 
+def _get_assessment_provider():
+    from app.modules.ai_chat.providers.gemini import get_gemini_instance
+    gemini = get_gemini_instance()
+    if getattr(gemini, "model", None) is not None:
+        return gemini
+    from app.modules.ai_chat.providers.groq_provider import GroqProvider
+    return GroqProvider()
+
 @router.post("/start", response_model=APIResponse)
 async def start_assessment(
     current_user: dict = Depends(get_current_user)
@@ -51,14 +59,12 @@ async def start_assessment(
     Starts a new assessment or resumes an existing incomplete session.
     Returns the first (or current) question with session metadata.
     """
-    from app.modules.ai_chat.providers.openai_provider import get_openai_instance
-    
     user_profile = await _get_user_profile(current_user)
     
     result = await service.start_assessment(
         user_id=current_user["id"],
         user_profile=user_profile,
-        openai_provider=get_openai_instance()
+        llm_provider=_get_assessment_provider()
     )
     
     logger.info(
@@ -77,8 +83,6 @@ async def submit_answer(
     Submits an answer to the current question.
     Returns next question OR completion result.
     """
-    from app.modules.ai_chat.providers.openai_provider import get_openai_instance
-    
     user_profile = await _get_user_profile(current_user)
     
     result = await service.submit_answer(
@@ -86,7 +90,7 @@ async def submit_answer(
         answer=body.answer,
         user_id=current_user["id"],
         user_profile=user_profile,
-        openai_provider=get_openai_instance()
+        llm_provider=_get_assessment_provider()
     )
     
     return APIResponse(success=True, data=result)

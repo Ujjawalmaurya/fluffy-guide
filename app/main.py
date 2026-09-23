@@ -83,7 +83,7 @@ async def startup():
 
     # [TODO] Re-enable provider heartbeat checks if needed. 
     # Currently disabled due to httpx async client conflicts on some systems.
-    log.info("[STARTUP] AI Providers (Gemini/OpenAI) are configured and ready.")
+    log.info("[STARTUP] AI Providers (Gemini/Groq/Jev) are configured and ready.")
 
 
 @app.get("/health")

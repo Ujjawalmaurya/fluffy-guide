@@ -121,13 +121,15 @@ class GeminiParseError(AppError):
     def __init__(self): super().__init__("GEMINI_PARSE_ERROR", "We encountered an issue processing your data. Please try again.", 422)
     # log_level: ERROR
 
-class OpenAIRateLimit(AppError):
-    def __init__(self): super().__init__("OPENAI_RATE_LIMIT", "Your assessment is paused briefly. Resuming automatically...", 429)
-    # log_level: WARNING
+class AIRateLimit(AppError):
+    def __init__(self): super().__init__("AI_RATE_LIMIT", "Your assessment is paused briefly. Resuming automatically...", 429)
 
-class OpenAIQuotaExceeded(AppError):
-    def __init__(self): super().__init__("OPENAI_QUOTA_EXCEEDED", "Assessment service is temporarily unavailable. Please try again in a few hours.", 503)
-    # log_level: ERROR (CRITICAL)
+class AIQuotaExceeded(AppError):
+    def __init__(self): super().__init__("AI_QUOTA_EXCEEDED", "Assessment service is temporarily unavailable. Please try again in a few hours.", 503)
+
+# Backward-compatibility aliases
+OpenAIRateLimit = AIRateLimit
+OpenAIQuotaExceeded = AIQuotaExceeded
 
 class GroqRateLimit(AppError):
     def __init__(self): super().__init__("GROQ_RATE_LIMIT", "We are processing too many requests. Please wait a moment.", 429)

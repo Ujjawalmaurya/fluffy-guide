@@ -1,4 +1,4 @@
-# OpenAI is used for both question generation and final skill extraction.
+# LLM provider is used for both question generation and final skill extraction.
 
 import json
 from app.modules.assessment.phase_config import (
@@ -154,17 +154,17 @@ def format_qa_pairs(conversation_history: list) -> str:
 async def generate_next_question(
   session: dict,
   user_profile: dict,
-  openai_provider
+  llm_provider
 ) -> dict:
   """
-  Generates the next adaptive question using OpenAI.
+  Generates the next adaptive question using the configured LLM provider.
   Reads the full adaptive_context from the session as conversation
   history so each question is informed by all previous answers.
 
   Args:
     session: current questionnaire_sessions DB record
     user_profile: combined user + profile data dict
-    gemini_provider: GeminiProvider instance
+    llm_provider: ILLMProvider instance
 
   Returns:
     Parsed question dict with question, type, options, phase info
@@ -201,7 +201,7 @@ async def generate_next_question(
     f"History={len(conversation_history)} messages."
   )
 
-  response_text = await openai_provider.complete(
+  response_text = await llm_provider.complete(
     messages=messages,
     max_tokens=300
   )
@@ -222,7 +222,7 @@ async def generate_next_question(
       "content": "Your response was not valid JSON. "
                  "Return only the JSON object with no other text."
     }]
-    response_text = await openai_provider.complete(
+    response_text = await llm_provider.complete(
       retry_messages, max_tokens=200
     )
     question_obj = json.loads(strip_markdown_fences(response_text))
@@ -242,16 +242,16 @@ async def generate_next_question(
 async def extract_skills_from_session(
   session: dict,
   user_profile: dict,
-  openai_provider
+  llm_provider
 ) -> dict:
   """
   Called once after assessment is fully complete.
-  Uses OpenAI for skill extraction.
+  Uses LLM provider for skill extraction.
 
   Args:
     session: completed questionnaire_sessions record
     user_profile: combined user + profile data dict
-    gemini_provider: GeminiProvider instance
+    llm_provider: ILLMProvider instance
 
   Returns:
     Dict with skills list, career_goals, blockers, work_preferences,
@@ -273,7 +273,7 @@ async def extract_skills_from_session(
     f"QA pairs={qa_pairs.count('Q:')}"
   )
 
-  response = await openai_provider.complete(
+  response = await llm_provider.complete(
     [{"role": "user", "content": prompt}]
   )
 
