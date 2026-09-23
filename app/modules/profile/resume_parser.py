@@ -4,7 +4,10 @@
 
 import io
 import json
-import docx
+try:
+    import docx
+except ImportError:
+    docx = None
 from loguru import logger
 
 from app.modules.ai_chat.providers.gemini import GeminiProvider

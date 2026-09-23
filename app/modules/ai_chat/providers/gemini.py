@@ -3,10 +3,14 @@
 
 import time
 import asyncio
-import google.generativeai as genai
-from typing import AsyncGenerator
-from google.api_core import exceptions as google_exceptions
+try:
+    import google.generativeai as genai
+    from google.api_core import exceptions as google_exceptions
+except ImportError:
+    genai = None
+    google_exceptions = None
 
+from typing import AsyncGenerator
 from loguru import logger
 from app.core.config import settings
 from app.modules.ai_chat.providers.base import ILLMProvider
@@ -34,6 +38,11 @@ class GeminiProvider(ILLMProvider):
         self.max_retries = settings.gemini_max_retries
         self.rpm_limit = settings.gemini_rpm_limit
         self.call_timestamps = []
+
+        if genai is None:
+            self.model = None
+            logger.warning("[AI_GEMINI] google-generativeai is not installed.")
+            return
 
         genai.configure(api_key=self.api_key)
 
@@ -146,6 +155,8 @@ class GeminiProvider(ILLMProvider):
 
     async def _build_model_with_name(self, model_name: str, system_instruction: str | None = None):
         """Internal helper to build model with specific name and instruction."""
+        if genai is None:
+            raise AppError("GEMINI_NOT_AVAILABLE", "google-generativeai is not installed.")
         return genai.GenerativeModel(
             model_name=model_name,
             system_instruction=system_instruction
@@ -153,17 +164,13 @@ class GeminiProvider(ILLMProvider):
 
     async def is_available(self) -> bool:
         """Check if Gemini API is available."""
+        if genai is None or self.model is None:
+            return False
 
         try:
-
             await self.model.generate_content_async("Say OK")
-
             logger.info("[AI_GEMINI] Availability check: True")
-
             return True
-
         except Exception:
-
             logger.warning("[AI_GEMINI] Availability check: False")
-
             return False

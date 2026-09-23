@@ -7,15 +7,20 @@ import json
 import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from groq import Groq
+try:
+    from groq import Groq
+except ImportError:
+    Groq = None
 
 router = APIRouter()
 
-_client: Groq | None = None
+_client = None
 
-def _get_client() -> Groq:
+def _get_client():
     global _client
     if _client is None:
+        if Groq is None:
+            raise HTTPException(status_code=503, detail="Groq library is not installed")
         api_key = os.getenv("GROQ_API_KEY", "")
         if not api_key:
             raise HTTPException(status_code=503, detail="GROQ_API_KEY not configured")

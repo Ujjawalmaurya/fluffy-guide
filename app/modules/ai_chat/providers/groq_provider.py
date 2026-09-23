@@ -1,4 +1,8 @@
-import groq
+try:
+    import groq
+except ImportError:
+    groq = None
+
 from typing import AsyncGenerator
 from loguru import logger
 from app.core.config import settings
@@ -9,10 +13,15 @@ class GroqProvider(ILLMProvider):
     def __init__(self):
         self.api_key = settings.groq_api_key
         self.model_name = settings.groq_model
-        self._client = groq.Groq(api_key=self.api_key)
-        logger.info(f"[AI_GROQ] GroqProvider initialized with model: {self.model_name}")
+        if groq is not None and self.api_key:
+            self._client = groq.Groq(api_key=self.api_key)
+        else:
+            self._client = None
+            logger.warning("[AI_GROQ] GroqProvider not initialized (missing groq library or api_key)")
 
     async def complete(self, messages: list[dict], language: str = "en", model_name: str | None = None, **kwargs) -> str:
+        if not self._client:
+            raise AppError("GROQ_NOT_CONFIGURED", "Groq AI client is not available or groq is not installed.")
         target_model = model_name or self.model_name
         try:
             # Groq's SDK is synchronous, but we can wrap it or just use it as is if it's fast.
@@ -30,6 +39,8 @@ class GroqProvider(ILLMProvider):
             raise AppError("GROQ_FAILED", "Groq AI service encountered an error.")
 
     async def stream(self, messages: list[dict], language: str = "en", model_name: str | None = None) -> AsyncGenerator[str, None]:
+        if not self._client:
+            raise AppError("GROQ_NOT_CONFIGURED", "Groq AI client is not available or groq is not installed.")
         target_model = model_name or self.model_name
         try:
             stream = self._client.chat.completions.create(

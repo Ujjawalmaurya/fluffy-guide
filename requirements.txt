@@ -18,3 +18,5 @@ pillow
 groq
 sentence-transformers
 torch
+typesafe-sdk
+python-docx

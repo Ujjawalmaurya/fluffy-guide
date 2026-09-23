@@ -5,7 +5,10 @@ CareerIdentityService — The engine that understands who the user is.
 """
 import asyncio
 from typing import List, Optional
-import groq
+try:
+    import groq
+except ImportError:
+    groq = None
 
 from app.core.config import settings
 from app.core.logger import get_logger
@@ -32,6 +35,8 @@ class CareerIdentityService:
     def _get_groq(self):
         """Lazily initialise Groq client."""
         if self._groq is None:
+            if groq is None:
+                raise RuntimeError("groq package is not installed.")
             self._groq = groq.Groq(api_key=settings.groq_api_key)
         return self._groq
 

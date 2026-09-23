@@ -9,7 +9,10 @@ import uuid
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from groq import Groq
+try:
+    from groq import Groq
+except ImportError:
+    Groq = None
 import os
 
 from app.shared.dependencies import get_current_user, get_db
@@ -17,7 +20,9 @@ from supabase import Client
 
 router = APIRouter(prefix="/interview", tags=["Mock Interview"])
 
-def _groq() -> Groq:
+def _groq():
+    if Groq is None:
+        raise HTTPException(status_code=503, detail="Groq library is not installed")
     key = os.getenv("GROQ_API_KEY", "")
     if not key:
         raise HTTPException(status_code=503, detail="GROQ_API_KEY not set")

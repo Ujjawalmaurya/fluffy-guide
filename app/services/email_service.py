@@ -1,4 +1,8 @@
-import resend
+try:
+    import resend
+except ImportError:
+    resend = None
+
 from app.core.config import settings
 from app.core.logger import get_logger
 
@@ -6,14 +10,13 @@ log = get_logger(__name__)
 
 class EmailService:
     def __init__(self):
-        if not settings.resend_api_key:
-            log.warning("RESEND_API_KEY not set. Emails will only be logged.")
-        resend.api_key = settings.resend_api_key
+        if resend and settings.resend_api_key:
+            resend.api_key = settings.resend_api_key
+        else:
+            log.warning("Resend library or RESEND_API_KEY missing. Emails will only be logged.")
 
     def send_otp(self, email: str, otp: str):
-        """
-        Sends an OTP email using Resend.
-        """
+        """Sends an OTP email using Resend, or falls back to logger in dev/test."""
         subject = f"{otp} is your SkillBridge login verification code"
         html = f"""
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
@@ -26,14 +29,13 @@ class EmailService:
         </div>
         """
         
-        # In dev/testing, if no key, just log it
-        if not settings.resend_api_key:
+        if not resend or not settings.resend_api_key:
             log.info(f"[MOCK EMAIL] OTP {otp} sent to {email}")
             return
 
         try:
             params = {
-                "from": "SkillBridge-AI<onboarding@resend.dev>", # Default sender for trialing
+                "from": "SkillBridge-AI <onboarding@resend.dev>",
                 "to": [email],
                 "subject": subject,
                 "html": html,
@@ -42,5 +44,4 @@ class EmailService:
             log.info(f"OTP email sent to {email} via Resend")
         except Exception as e:
             log.error(f"Failed to send OTP email: {str(e)}")
-            # Don't crash the whole flow if email fails, but log it
-            # In a real prod app, you might want to retry or throw.
+            log.info(f"[MOCK EMAIL FALLBACK] OTP {otp} for {email}")
