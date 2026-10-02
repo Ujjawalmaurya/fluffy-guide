@@ -77,7 +77,7 @@ async def parse_resume(file_bytes: bytes, filename: str, content_type: str, user
     
     try:
         if filename.lower().endswith(".pdf"):
-            from services.pdf_extractor import extract_resume_text
+            from app.modules.resume_analysis.pdf import extract_resume_text
             text = extract_resume_text(file_bytes)
         elif filename.lower().endswith(".docx"):
             doc = docx.Document(io.BytesIO(file_bytes))
@@ -153,7 +153,7 @@ async def extract_india_details(text: str, provider: ILLMProvider) -> dict:
 
 async def detect_achievements(text: str, provider: ILLMProvider) -> dict:
     """Deterministic metric-bearing achievement isolation in <0.1ms."""
-    from services.deterministic_resume_extractor import extract_quantified_achievements
+    from app.modules.resume_analysis.deterministic import extract_quantified_achievements
     raw_achievements = extract_quantified_achievements(text)
     return {"achievements": raw_achievements[:6]}
 

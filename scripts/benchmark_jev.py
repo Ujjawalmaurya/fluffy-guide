@@ -6,7 +6,7 @@ import sys
 # Ensure backend root is in sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.pdf_extractor import extract_resume_bundle
+from app.modules.resume_analysis.pdf import extract_resume_bundle
 from app.modules.ai_chat.providers.jev_provider import JevProvider
 
 async def benchmark_pdf_extraction(pdf_path: str) -> dict:

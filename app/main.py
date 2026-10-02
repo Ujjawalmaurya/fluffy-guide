@@ -26,9 +26,8 @@ from app.modules.skill_profile.related_skills import router as related_skills_ro
 from app.modules.interview.router import router as interview_router
 from app.modules.demo.router import router as demo_router
 
-# New Resume Analysis Router (Literal path as per instructions)
-from routers.resume_analysis import router as resume_router
-from routers.government import router as government_router
+from app.modules.resume_analysis.router import router as resume_router
+from app.modules.government.router import router as government_router
 
 log = get_logger("MAIN")
 

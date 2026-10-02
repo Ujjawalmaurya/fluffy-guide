@@ -46,14 +46,32 @@ async def get_current_user(
             detail={"success": False, "error_code": "AUTH_TOKEN_INVALID", "message": "Invalid or expired token.", "details": {}}
         )
 
-    result = db.table("users").select("*").eq("id", user_id).single().execute()
-    if not result.data:
+    try:
+        result = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
+        user_data = result.data
+    except Exception:
+        user_data = None
+
+    if not user_data:
+        # Check if user is a demo persona
+        from app.modules.demo.personas import PERSONA_MAP
+        for p in PERSONA_MAP.values():
+            if p["id"] == user_id:
+                return {
+                    "id": p["id"],
+                    "email": p["email"],
+                    "user_type": p["type"],
+                    "preferred_lang": "en",
+                    "onboarding_done": True,
+                    "full_name": p["name"],
+                }
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"success": False, "error_code": "AUTH_UNAUTHORIZED", "message": "User not found.", "details": {}}
         )
 
-    return result.data
+    return user_data
 
 
 async def get_officer_user(current_user: dict = Depends(get_current_user)) -> dict:

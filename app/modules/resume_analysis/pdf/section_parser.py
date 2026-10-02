@@ -1,18 +1,21 @@
+"""
+section_parser.py — Segment resume text into canonical sections and extract contact details from text and URLs.
+"""
 import re
 
-EMAIL_REGEX = re.compile(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+')
-PHONE_REGEX = re.compile(r'(?:\+?91[\s\-]?)?(?:0)?[6-9]\d{4}[\s\-]?\d{5}\b|(?:\+?91[\s\-]?)?[6-9]\d{9}\b')
-LINKEDIN_REGEX = re.compile(r'(?:https?://)?(?:www\.)?linkedin\.com/in/[a-zA-Z0-9_\-\.]+')
-GITHUB_REGEX = re.compile(r'(?:https?://)?(?:www\.)?github\.com/[a-zA-Z0-9_\-\.]+')
+EMAIL_REGEX = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
+PHONE_REGEX = re.compile(r"(?:\+?91[\s\-]?)?(?:0)?[6-9]\d{4}[\s\-]?\d{5}\b|(?:\+?91[\s\-]?)?[6-9]\d{9}\b")
+LINKEDIN_REGEX = re.compile(r"(?:https?://)?(?:www\.)?linkedin\.com/in/[a-zA-Z0-9_\-\.]+")
+GITHUB_REGEX = re.compile(r"(?:https?://)?(?:www\.)?github\.com/[a-zA-Z0-9_\-\.]+")
 
 SECTION_HEADERS = {
-    "summary": re.compile(r'^(?:professional\s+summary|summary|profile|about\s+me|career\s+objective)\b', re.IGNORECASE | re.MULTILINE),
-    "experience": re.compile(r'^(?:work\s+experience|professional\s+experience|experience|employment\s+history|internships?)\b', re.IGNORECASE | re.MULTILINE),
-    "education": re.compile(r'^(?:education|academic\s+qualifications|academics|qualifications)\b', re.IGNORECASE | re.MULTILINE),
-    "skills": re.compile(r'^(?:technical\s+skills|skills|core\s+competencies|key\s+skills|tools\s+&\s+technologies|technical\s+proficiency)\b', re.IGNORECASE | re.MULTILINE),
-    "projects": re.compile(r'^(?:projects|key\s+projects|academic\s+projects|personal\s+projects)\b', re.IGNORECASE | re.MULTILINE),
-    "certifications": re.compile(r'^(?:certifications|certificates|licenses\s+&\s+certifications)\b', re.IGNORECASE | re.MULTILINE),
-    "achievements": re.compile(r'^(?:achievements|honors\s+&\s+awards|awards|accomplishments)\b', re.IGNORECASE | re.MULTILINE),
+    "summary": re.compile(r"^(?:professional\s+summary|summary|profile|about\s+me|career\s+objective)\b", re.IGNORECASE | re.MULTILINE),
+    "experience": re.compile(r"^(?:work\s+experience|professional\s+experience|experience|employment\s+history|internships?)\b", re.IGNORECASE | re.MULTILINE),
+    "education": re.compile(r"^(?:education|academic\s+qualifications|academics|qualifications)\b", re.IGNORECASE | re.MULTILINE),
+    "skills": re.compile(r"^(?:technical\s+skills|skills|core\s+competencies|key\s+skills|tools\s+&\s+technologies|technical\s+proficiency)\b", re.IGNORECASE | re.MULTILINE),
+    "projects": re.compile(r"^(?:projects|key\s+projects|academic\s+projects|personal\s+projects)\b", re.IGNORECASE | re.MULTILINE),
+    "certifications": re.compile(r"^(?:certifications|certificates|licenses\s+&\s+certifications)\b", re.IGNORECASE | re.MULTILINE),
+    "achievements": re.compile(r"^(?:achievements|honors\s+&\s+awards|awards|accomplishments)\b", re.IGNORECASE | re.MULTILINE),
 }
 
 

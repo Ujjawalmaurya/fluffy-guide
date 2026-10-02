@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Dict, Optional, Literal, Union
 from pydantic import BaseModel, Field
 
+
 class ExperienceEntry(BaseModel):
     company: str = "Unknown Company"
     role: str = "Role not specified"
@@ -12,6 +13,7 @@ class ExperienceEntry(BaseModel):
     responsibilities: List[str] = Field(default_factory=list)
     achievement_ratio: float = 0.0
 
+
 class EducationEntry(BaseModel):
     degree: str = "Degree not specified"
     institution: str = "Institution not specified"
@@ -19,6 +21,7 @@ class EducationEntry(BaseModel):
     specialization: Optional[str] = None
     is_vocational: bool = False
     is_certified: bool = False
+
 
 class CareerTrajectory(BaseModel):
     direction: Literal["ascending", "lateral", "descending", "unclear"] = "unclear"
@@ -28,9 +31,11 @@ class CareerTrajectory(BaseModel):
     total_experience_months: int = 0
     summary: Optional[str] = None
 
+
 class Skill(BaseModel):
     name: str
     level: Optional[Literal["beginner", "intermediate", "advanced"]] = "intermediate"
+
 
 class StructuredProfile(BaseModel):
     full_name: Optional[str] = None
@@ -51,6 +56,7 @@ class StructuredProfile(BaseModel):
     has_summary_section: bool = False
     inferred_target_roles: List[str] = Field(default_factory=list)
 
+
 class QualityScores(BaseModel):
     ats_compatibility: int = 0
     quantification_score: int = 0
@@ -61,14 +67,17 @@ class QualityScores(BaseModel):
     ats_issues: List[str] = Field(default_factory=list)
     missing_sections: List[str] = Field(default_factory=list)
 
+
 class BulletImprovement(BaseModel):
     original: str
     improved: str
     reason: str
 
+
 class ImproveBulletRequest(BaseModel):
     bullet: str
     target_roles: List[str] = Field(default_factory=list)
+
 
 class SuggestionSet(BaseModel):
     summary_generated: str = ""
@@ -78,6 +87,7 @@ class SuggestionSet(BaseModel):
     sections_to_add: List[str] = Field(default_factory=list)
     india_specific_flags: List[str] = Field(default_factory=list)
     transferable_skills_detected: List[str] = Field(default_factory=list)
+
 
 class ResumeAnalysisResult(BaseModel):
     user_id: str
