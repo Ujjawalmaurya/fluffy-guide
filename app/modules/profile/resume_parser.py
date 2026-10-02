@@ -117,22 +117,45 @@ async def parse_resume(file_bytes: bytes, filename: str, content_type: str, user
     }
 
 async def score_ats(text: str, provider: ILLMProvider) -> dict:
-    response = await provider.complete(
-        [{"role": "user", "content": ATS_SCORING_PROMPT.format(resume_text=text)}]
-    )
-    return _parse_json(response)
+    """Deterministic ATS scoring in <1ms without burning LLM calls."""
+    import re
+    has_email = bool(re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}", text))
+    has_phone = bool(re.search(r"(?:\+?91[\-\s]?)?[6-9]\d{9}", text))
+    has_skills = bool(re.search(r"(skills|technical skills|competencies)", text, re.I))
+    has_exp = bool(re.search(r"(experience|work experience|employment)", text, re.I))
+    has_edu = bool(re.search(r"(education|academics|qualifications)", text, re.I))
+    
+    fmt = 30 if (has_email and has_phone) else 15
+    kw = 32 if (has_skills and has_exp) else 18
+    imp = 28 if re.search(r"\d+[%kK+]", text) else 15
+    total = fmt + kw + imp
+
+    suggestions = []
+    if not has_email or not has_phone:
+        suggestions.append("Add verified phone and professional email prominently at the top.")
+    if imp < 20:
+        suggestions.append("Add quantified metrics (e.g., percentages, scale, cost saved) to experience bullets.")
+    if not has_skills:
+        suggestions.append("Create a dedicated 'Technical Skills' section for ATS parsing.")
+
+    return {
+        "score": total,
+        "breakdown": {"formatting": fmt, "keywords": kw, "impact": imp},
+        "suggestions": suggestions
+    }
 
 async def extract_india_details(text: str, provider: ILLMProvider) -> dict:
-    response = await provider.complete(
-        [{"role": "user", "content": INDIA_QUALIFICATIONS_PROMPT.format(resume_text=text)}]
-    )
-    return _parse_json(response)
+    """Deterministic Indian qualification and exam extraction in <0.1ms."""
+    import re
+    exams = [m for m in ["GATE", "UPSC", "JEE", "CAT", "NET", "SSC"] if re.search(rf"{m}", text, re.I)]
+    certs = [m for m in ["NPTEL", "CDAC", "ITI", "Polytechnic", "PMKVY", "NSDC", "Skill India", "AWS", "Azure", "GCP", "Docker"] if re.search(rf"{m}", text, re.I)]
+    return {"exams": exams, "certificates": certs}
 
 async def detect_achievements(text: str, provider: ILLMProvider) -> dict:
-    response = await provider.complete(
-        [{"role": "user", "content": ACHIEVEMENT_DETECTION_PROMPT.format(resume_text=text)}]
-    )
-    return _parse_json(response)
+    """Deterministic metric-bearing achievement isolation in <0.1ms."""
+    from services.deterministic_resume_extractor import extract_quantified_achievements
+    raw_achievements = extract_quantified_achievements(text)
+    return {"achievements": raw_achievements[:6]}
 
 async def rewrite_bullets(bullets: list[str], provider: ILLMProvider) -> dict:
     response = await provider.complete(

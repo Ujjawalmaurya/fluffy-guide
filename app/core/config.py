@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # Local Ollama
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:3b"
-    ollama_context_length: int = 32768
+    ollama_context_length: int = 4096
 
     # ── Hardcoded config below ──────────
     @property

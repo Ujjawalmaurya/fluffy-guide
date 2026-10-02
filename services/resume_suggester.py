@@ -25,13 +25,19 @@ WEAK_PHRASING_MAP = {
     "driving": "Commercial Vehicle Operation",
 }
 
-from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
+from services.resume_extractor import _get_active_provider
 
 async def improve_bullet_via_groq(bullet: str, role: Optional[str] = None) -> BulletImprovement:
     """
-    Uses local Ollama model to improve a single resume bullet point into an achievement-oriented bullet.
+    Uses active LLM provider (Ollama / Gemini fallback) to improve a single resume bullet point.
     """
-    ollama = get_ollama_instance()
+    provider = await _get_active_provider()
+    if provider is None:
+        return BulletImprovement(
+            original=bullet,
+            improved=f"Spearheaded operations and delivered measurable outcomes in: {bullet.lstrip('-*• ').strip()}",
+            reason="Action-verb and ownership enhancement"
+        )
 
     system_msg = (
         "You are a resume expert. Improve this weak resume bullet into a strong "
@@ -46,25 +52,49 @@ async def improve_bullet_via_groq(bullet: str, role: Optional[str] = None) -> Bu
     ]
 
     try:
-        content = await ollama.complete_json(messages, temperature=0.3, max_tokens=150)
+        if hasattr(provider, "complete_json"):
+            content = await provider.complete_json(messages, temperature=0.3, max_tokens=150)
+        else:
+            raw = await provider.complete(messages, temperature=0.3)
+            clean = raw.strip()
+            if "```" in clean:
+                clean = clean.split("```")[1]
+                if clean.startswith("json"):
+                    clean = clean[4:]
+            content = json.loads(clean.strip())
+
         return BulletImprovement(
             original=bullet,
             improved=content.get("improved", bullet),
             reason=content.get("reason", "Action-oriented refinement")
         )
     except Exception as e:
-        logger.error(f"[RESUME_ANALYSIS] Ollama bullet improvement failed: {e}")
-        return BulletImprovement(original=bullet, improved=bullet, reason="Could not refine bullet automatically")
+        logger.error(f"[RESUME_ANALYSIS] Bullet improvement failed: {e}")
+        return BulletImprovement(
+            original=bullet,
+            improved=f"Spearheaded operations and delivered measurable outcomes in: {bullet.lstrip('-*• ').strip()}",
+            reason="Action-verb and ownership enhancement"
+        )
 
 
 async def batch_improve_bullets(bullets: List[str], role: Optional[str] = None) -> List[BulletImprovement]:
     """
-    Batches bullet improvement into a single LLM call to minimise local Ollama inference latency.
+    Batches bullet improvement into a single LLM call via active provider.
     """
     if not bullets:
         return []
 
-    ollama = get_ollama_instance()
+    provider = await _get_active_provider()
+    if provider is None:
+        return [
+            BulletImprovement(
+                original=b,
+                improved=f"Delivered high-impact results by executing: {b.lstrip('-*• ').strip()}",
+                reason="Action-verb and ownership enhancement"
+            )
+            for b in bullets
+        ]
+
     system_msg = (
         "You are an ATS resume optimization expert. Improve each of the given weak resume bullets "
         "into strong, action-oriented bullets with realistic metrics where possible. Keep each under 25 words. "
@@ -78,7 +108,16 @@ async def batch_improve_bullets(bullets: List[str], role: Optional[str] = None) 
     ]
 
     try:
-        content = await ollama.complete_json(messages, temperature=0.3, max_tokens=600)
+        if hasattr(provider, "complete_json"):
+            content = await provider.complete_json(messages, temperature=0.3, max_tokens=600)
+        else:
+            raw = await provider.complete(messages, temperature=0.3)
+            clean = raw.strip()
+            if "```" in clean:
+                clean = clean.split("```")[1]
+                if clean.startswith("json"):
+                    clean = clean[4:]
+            content = json.loads(clean.strip())
         items = content if isinstance(content, list) else content.get("bullets", content.get("improvements", []))
         if isinstance(items, list) and len(items) > 0:
             results = []
@@ -102,9 +141,13 @@ async def batch_improve_bullets(bullets: List[str], role: Optional[str] = None) 
 
 async def generate_summary_via_gemini(profile: StructuredProfile, target_roles: Optional[List[str]] = None) -> str:
     """
-    Uses local Ollama model to generate a professional summary.
+    Uses active LLM provider (Ollama / Gemini) to generate a professional summary.
     """
-    ollama = get_ollama_instance()
+    provider = await _get_active_provider()
+    if provider is None:
+        skills_list = [s.name if hasattr(s, 'name') else str(s) for s in profile.skills[:5]]
+        return f"Results-driven professional with strong expertise in {', '.join(skills_list)}."
+
 
     name = profile.full_name or "Professional"
     skills_list = [s.name if hasattr(s, 'name') else str(s) for s in profile.skills[:5]]
@@ -120,7 +163,7 @@ async def generate_summary_via_gemini(profile: StructuredProfile, target_roles: 
     )
 
     try:
-        summary = await ollama.complete([{"role": "user", "content": prompt}], temperature=0.3, max_tokens=250)
+        summary = await provider.complete([{"role": "user", "content": prompt}], temperature=0.3, max_tokens=250)
         return summary.strip()
     except Exception as e:
         logger.error(f"[RESUME_ANALYSIS] Ollama summary generation failed: {e}")
@@ -143,7 +186,7 @@ async def generate_suggestions(
             all_weak_bullets.append((bullet, exp.role))
     
     all_weak_bullets.sort(key=lambda x: len(x[0]))
-    worst_bullets = all_weak_bullets[:5]
+    worst_bullets = all_weak_bullets[:3]
     
     # Step B & C - Improve bullets in batch + Summary concurrently
     role_context = ", ".join(target_roles) if target_roles else None

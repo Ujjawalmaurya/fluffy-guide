@@ -52,7 +52,7 @@ class OllamaProvider(ILLMProvider):
             "stream": False,
             "options": {
                 "temperature": temperature,
-                "num_ctx": self.context_length,
+                "num_ctx": kwargs.get("num_ctx", min(self.context_length, 4096)),
                 "num_predict": max_tokens,
             },
         }

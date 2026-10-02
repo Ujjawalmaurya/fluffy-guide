@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional
 from loguru import logger
 from models.resume_analysis_models import ResumeAnalysisResult, StructuredProfile
@@ -55,6 +56,7 @@ async def analyze_resume_pipeline(
         suggestions = SuggestionSet()
 
     # 5. Build Final Result
+    now_iso = datetime.utcnow().isoformat()
     result = ResumeAnalysisResult(
         user_id=user_id,
         structured_profile=profile,
@@ -63,7 +65,9 @@ async def analyze_resume_pipeline(
         overall_score=quality_scores.overall,
         target_roles=effective_roles,
         india_flags=suggestions.india_specific_flags,
-        raw_text=raw_text
+        raw_text=raw_text,
+        created_at=now_iso,
+        updated_at=now_iso,
     )
     
     # 6. Persist to Database (Upsert: one analysis per user)

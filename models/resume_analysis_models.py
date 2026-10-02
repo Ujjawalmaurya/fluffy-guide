@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
+from datetime import datetime
 from typing import List, Dict, Optional, Literal, Union
+from pydantic import BaseModel, Field
 
 class ExperienceEntry(BaseModel):
     company: str = "Unknown Company"
@@ -87,3 +88,5 @@ class ResumeAnalysisResult(BaseModel):
     target_roles: List[str] = Field(default_factory=list)
     india_flags: List[str] = Field(default_factory=list)
     raw_text: Optional[str] = None
+    created_at: Optional[str] = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    updated_at: Optional[str] = Field(default_factory=lambda: datetime.utcnow().isoformat())

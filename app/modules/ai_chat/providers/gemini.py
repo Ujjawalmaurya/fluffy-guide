@@ -163,6 +163,28 @@ class GeminiProvider(ILLMProvider):
 
         return await self._fallback_to_ollama(messages, **kwargs)
 
+    async def complete_json(self, messages: list[dict], **kwargs) -> dict:
+        """Execute completion and parse JSON output, handling markdown fences and retrying if necessary."""
+        raw = await self.complete(messages, **kwargs)
+        clean = raw.strip()
+        if clean.startswith("```"):
+            lines = clean.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            clean = "\n".join(lines).strip()
+
+        first_bracket = min(
+            (idx for idx in [clean.find("{"), clean.find("[")] if idx != -1),
+            default=-1,
+        )
+        last_bracket = max(clean.rfind("}"), clean.rfind("]"))
+        if first_bracket != -1 and last_bracket > first_bracket:
+            clean = clean[first_bracket : last_bracket + 1]
+
+        return json.loads(clean)
+
     async def stream(self, messages: list[dict], language: str = "en", model_name: str | None = None) -> AsyncGenerator[str, None]:
         """Stream response from Gemini with local Ollama fallback."""
         if not self.model or genai is None:

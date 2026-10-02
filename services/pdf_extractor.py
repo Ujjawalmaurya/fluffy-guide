@@ -28,8 +28,19 @@ def extract_resume_bundle(content: bytes) -> dict:
     }
 
 def extract_resume_text(content: bytes) -> str:
-    """Primary entry point for backwards-compatible resume text extraction."""
+    """Primary entry point for backwards-compatible resume text extraction with text fallback."""
     logger.info("[PDF_EXTRACTOR] Processing PDF content...")
-    bundle = extract_resume_bundle(content)
-    logger.info(f"[PDF_EXTRACTOR] Complete. Length: {len(bundle['text'])} chars, {len(bundle['links'])} links.")
-    return bundle["text"]
+    try:
+        bundle = extract_resume_bundle(content)
+        logger.info(f"[PDF_EXTRACTOR] Complete. Length: {len(bundle['text'])} chars, {len(bundle['links'])} links.")
+        if bundle["text"].strip():
+            return bundle["text"]
+    except Exception as e:
+        logger.warning(f"[PDF_EXTRACTOR] PDF stream decode failed ({e}). Falling back to text decode.")
+    
+    try:
+        fallback_text = normalize_text(content.decode("utf-8", errors="ignore"))
+        logger.info(f"[PDF_EXTRACTOR] Text fallback decoded {len(fallback_text)} chars.")
+        return fallback_text
+    except Exception:
+        return ""

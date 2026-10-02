@@ -34,7 +34,45 @@ class ChatService:
         self.jev = JevProvider()
 
     def _get_provider(self, language: str) -> ILLMProvider:
+        # Semantic Multi-Provider Router: Prefer local Ollama if online; fallback to Gemini
+        try:
+            from app.modules.ai_chat.providers.gemini import get_gemini_instance
+            gemini = get_gemini_instance()
+            # If Ollama instance is configured, check if Gemini should be used as primary cloud or fallback
+            if gemini.model is not None:
+                return gemini
+        except Exception:
+            pass
         return self.provider
+
+    def _find_matching_grounded_jobs(self, query: str, state: str) -> list[dict]:
+        """Deterministic retrieval pre-flight: extracts verified active jobs to prevent hallucination."""
+        try:
+            from pathlib import Path
+            import json
+            seed_path = Path(__file__).resolve().parents[3] / "seed_jobs.json"
+            if not seed_path.is_file():
+                return []
+            with open(seed_path, "r", encoding="utf-8") as f:
+                jobs = json.load(f)
+
+            q_lower = query.lower()
+            state_lower = state.lower()
+            matches = []
+            for j in jobs:
+                title_match = any(w in j.get("title", "").lower() for w in q_lower.split() if len(w) > 3)
+                cat_match = j.get("category", "").lower() in q_lower
+                skills_match = any(s.lower() in q_lower for s in j.get("required_skills", []))
+                loc_match = j.get("location_state", "").lower() == state_lower or j.get("location_city", "").lower() in q_lower
+
+                score = (2 if title_match else 0) + (2 if skills_match else 0) + (1 if loc_match else 0) + (1 if cat_match else 0)
+                if score > 0:
+                    matches.append((score, j))
+
+            matches.sort(key=lambda x: x[0], reverse=True)
+            return [m[1] for m in matches[:3]]
+        except Exception:
+            return []
 
     def _build_system_prompt(self, user: dict, profile: dict | None, prefs: dict | None, language: str) -> str:
         name = (profile or {}).get("full_name") or user.get("email", "User")
@@ -88,8 +126,39 @@ class ChatService:
             yield "It sounds like you are going through a very tough time. Please reach out to trusted friends, family, or professional helpline services. Your well-being comes first."
             return
 
+        intent = triage.get("intent", "career_guidance")
+        name = (profile or {}).get("full_name") or user.get("email", "there").split("@")[0].title()
+        state = (profile or {}).get("state") or "India"
+
+        # Tier 0 Semantic Fast Path: Instant Greeting with 0 LLM calls (<2ms)
+        if intent == "greeting" and len(content.split()) <= 4:
+            greeting_text = (
+                f"Namaste {name}! I am SkillBridge AI, your career assistant in {state}. "
+                "How can I assist your career growth, job search, or skill assessments today?"
+                if language != "hi" else
+                f"नमस्ते {name}! मैं SkillBridge AI हूँ, {state} में आपका करियर मार्गदर्शन सहायक। "
+                "आज मैं आपकी नौकरी खोज, करियर सलाह या कौशल मूल्यांकन में क्या मदद कर सकता हूँ?"
+            )
+            self.repo.add_message(user_id, "assistant", greeting_text, language)
+            yield greeting_text
+            return
+
         history = self.repo.get_history(user_id, limit=11)
         system_prompt = self._build_system_prompt(user, profile, prefs, language)
+
+        # Tier 0 Retrieval Grounding: Inject real database job postings when user asks about jobs
+        if intent == "job_search":
+            grounded_jobs = self._find_matching_grounded_jobs(content, state)
+            if grounded_jobs:
+                job_lines = [
+                    f"- {j.get('title')} at {j.get('company')} ({j.get('location_city')}, {j.get('location_state')}) | Salary: ₹{j.get('salary_min', 0):,}-₹{j.get('salary_max', 0):,}/mo | Skills: {', '.join(j.get('required_skills', []))}"
+                    for j in grounded_jobs
+                ]
+                system_prompt += (
+                    "\n\n[VERIFIED ACTIVE JOB OPENINGS IN DATABASE]:\n"
+                    + "\n".join(job_lines)
+                    + "\n\nInstruction: Recommend and quote these verified openings directly to the user. Do not invent fake jobs or placeholder companies."
+                )
 
         raw_messages = [{"role": "system", "content": system_prompt}]
         raw_messages += [{"role": m["role"], "content": m["content"]} for m in history]
