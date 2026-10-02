@@ -8,6 +8,7 @@ from app.core.logger import get_logger
 
 log = get_logger(__name__)
 
+
 class EmailService:
     def __init__(self):
         if resend and settings.resend_api_key:

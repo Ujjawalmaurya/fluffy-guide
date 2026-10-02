@@ -8,7 +8,7 @@ from app.core.security import generate_otp, create_access_token, create_refresh_
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.modules.auth.repository import AuthRepository
-from app.services.email_service import EmailService
+from app.modules.auth.email_service import EmailService
 from app.shared.exceptions import OTPNotFound, OTPExpired, OTPAlreadyUsed, OTPInvalid
 
 log = get_logger("AUTH")
