@@ -1,115 +1,47 @@
-# ========================
-# Python bytecode
-# ========================
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-*.pyc
 .Python
-
-# ========================
-# Virtual environments
-# ========================
-venv/
-.venv/
-env/
-ENV/
-.env_dir/
-
-# ========================
-# Build / packaging
-# ========================
 *.egg-info/
-*.egg
 dist/
 build/
-sdist/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
-MANIFEST
+.pytest_cache/
 
-# ========================
-# Environment & secrets
-# ========================
+# Env
 .env
 .env.local
-.env.*.local
-# Keep the example file
-!.env.example
 
-# ========================
 # Logs
-# ========================
 logs/
 *.log
 
-# ========================
-# Database files
-# ========================
-*.db
-*.sqlite
-*.sqlite3
+# Virtual envs
+venv/
+.venv/
+env/
 
-# ========================
-# Scratch / temp work
-# ========================
-scratch/
-app/scratch/
-
-# ========================
-# Upload / media artifacts
-# ========================
-uploads/
-media/
-tmp/
-temp/
-
-# ========================
-# Testing & coverage
-# ========================
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
-coverage.xml
-*.cover
-*.py,cover
-
-# ========================
-# Type checking / linting
-# ========================
-.mypy_cache/
-.dmypy.json
-dmypy.json
-.ruff_cache/
-
-# ========================
-# Editor / IDE
-# ========================
+# IDE
 .vscode/
-!.vscode/extensions.json
 .idea/
-*.suo
-*.sw?
 
-# ========================
 # OS
-# ========================
 .DS_Store
 Thumbs.db
-Desktop.ini
 
-# ========================
-# Jupyter
-# ========================
-.ipynb_checkpoints/
-*.ipynb
+# Scratch
+scratch/
 
-# ========================
-# Distribution / celery
-# ========================
-celerybeat-schedule
-celerybeat.pid
+# Graphify generated cache and metadata
+graphify-out/cache/
+graphify-out/manifest.json
+graphify-out/.graphify_*
+graphify-out/wiki/
+graphify-out/20*/
+graphify-out/*.html
+!graphify-out/graph.html
+
+
+
+

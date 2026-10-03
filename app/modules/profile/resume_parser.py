@@ -1,211 +1,176 @@
 # [RESUME_PARSER] Extracts structured career data from resume PDF.
-# Uses robust multi-stage extraction (PyMuPDF + OCR fallback), Ollama for intelligence.
-# Returns structured JSON — aligned with Pydantic for reliability.
+# Uses pdfplumber for text extraction, Gemini (Flash/Pro) and Groq for intelligence.
+# Returns structured JSON — never uses keyword lists.
 
 import io
 import json
-from typing import List, Optional
+try:
+    import docx
+except ImportError:
+    docx = None
 from loguru import logger
-from pydantic import Field
-from app.schemas.base import BaseSchema
-from app.schemas.enums import EducationLevel
 
-from app.modules.ai_chat.providers.base import IStructuredProvider
-from app.shared.exceptions import ResumeNoText, AppError
-from services.pdf_extractor import extract_resume_text
-from app.core import llm_config
+from app.modules.ai_chat.providers.base import ILLMProvider
+from app.shared.exceptions import ResumeNoText, GeminiParseError
 
-# --- Pydantic Schemas for Strict Parsing ---
+# Optimized prompt for lower token usage and deeper insights
+RESUME_EXTRACTION_PROMPT = """Extract deep career insights from the resume below.
+Return ONLY valid JSON. No markdown.
 
-class PersonalInfo(BaseSchema):
-    name: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    location: Optional[str] = None
-    linkedin: Optional[str] = None
+Fields:
+- skills: list of {{name, category, proficiency_label, years_used}}
+- experience_level: Entry|Junior|Mid|Senior|Expert
+- strengths: list of strings
+- weaknesses: list of strings (areas for improvement)
+- career_suggestions: list of strings (suitable roles in India)
+- skill_gap_analysis: sentence on what's missing for target roles
+- education: list of {{degree, institution, year}}
+- experience: list of {{title, company, duration}}
 
-class Education(BaseSchema):
-    degree: str
-    institution: str
-    year_range: Optional[str] = None
-    level: EducationLevel = Field(default=EducationLevel.GRADUATE)
-    coursework: Optional[List[str]] = None
+Resume:
+{resume_text}"""
 
-class Experience(BaseSchema):
-    title: str
-    company: str
-    location: Optional[str] = None
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    is_current: bool = False
-    responsibilities: List[str]
-    technologies: List[str]
+ATS_SCORING_PROMPT = """Score the resume below for ATS compatibility.
+Return ONLY valid JSON. No markdown.
 
-class Skill(BaseSchema):
-    name: str
-    category: str = Field(description="technical | soft | tool")
-    proficiency: str = Field(description="Beginner | Intermediate | Advanced | Expert")
+Fields:
+- score: int (0-100)
+- breakdown: {{formatting: 0-33, keywords: 0-33, impact: 0-34}}
+- suggestions: list of strings
 
-class ResumeData(BaseSchema):
-    personal_info: PersonalInfo
-    primary_role: str
-    total_experience_years: int
-    education: List[Education]
-    experience: List[Experience]
-    skills: List[Skill]
-    summary: str
-    strengths: List[str]
-    weaknesses: List[str]
-    career_suggestions: List[str]
-    skill_gap_analysis: str
-    interests: List[str] = Field(default_factory=list)
+Resume:
+{resume_text}"""
 
-# Optimized prompt following HARD RULES
-RESUME_SYSTEM_PROMPT = f"""ROLE: You are an elite AI engineer at SkillBridge.
-TASK: Extract structured career data from the provided resume text.
-JSON ONLY. No prose. No markdown. No explanation.
+INDIA_QUALIFICATIONS_PROMPT = """Extract India-specific qualifications (Exams like GATE, UPSC, JEE, or Certifications like NPTEL, CDAC) from the resume.
+Return ONLY valid JSON. No markdown.
 
-SCHEMA RULES:
-- personal_info: {{name, email, phone, location, linkedin}}
-- primary_role: job title (max 3 words)
-- total_experience_years: int
-- education: [{{degree, institution, year_range, level, coursework}}]
-- experience: [{{title, company, location, start_date, end_date, is_current, responsibilities, technologies}}]
-- skills: [{{name, category, proficiency}}]
-- summary: professional summary (max 20 words)
-- strengths: [string] (max 3)
-- weaknesses: [string] (max 3)
-- career_suggestions: [string] (max 3)
-- skill_gap_analysis: missing skill (max 10 words)
-- interests: [string] (professional/career interests or fields, max 3)
+Fields:
+- exams: list of strings
+- certificates: list of strings
 
-{llm_config.CONCISENESS_INSTRUCTION}
-"""
+Resume:
+{resume_text}"""
 
-RESUME_USER_PROMPT = """RESUME TEXT:
-{resume_text}
+ACHIEVEMENT_DETECTION_PROMPT = """Detect quantified achievements (numbers, percentages, scales) from the resume.
+Return ONLY valid JSON. No markdown.
 
-Generate JSON now."""
+Fields:
+- achievements: list of {{title: "Short description", impact: "Quantified metric"}}
 
+Resume:
+{resume_text}"""
+
+BULLET_REWRITE_PROMPT = """Rewrite the following resume bullets to be more impactful and result-oriented.
+Return ONLY valid JSON. No markdown.
+
+Input Bullets:
+{bullets}
+
+Return as:
+{{rewritten_bullets: ["new bullet 1", "new bullet 2", ...]}}"""
 
 async def parse_resume(file_bytes: bytes, filename: str, content_type: str, user_id: str,
-                       llm_provider: IStructuredProvider) -> dict:
+                       provider: ILLMProvider) -> dict:
     
-    logger.info(f"[RESUME_PARSER] Processing user={user_id} file={filename}")
+    logger.info(f"[RESUME_PARSER] Extracting text for user={user_id} file={filename}")
     text = ""
     
     try:
         if filename.lower().endswith(".pdf"):
+            from app.modules.resume_analysis.pdf import extract_resume_text
             text = extract_resume_text(file_bytes)
         elif filename.lower().endswith(".docx"):
-            import docx
             doc = docx.Document(io.BytesIO(file_bytes))
             text = "\n".join([para.text for para in doc.paragraphs])
-        else:
+        else: # assuming text/plain
             text = file_bytes.decode("utf-8", errors="ignore")
     except Exception as e:
-        logger.error(f"[RESUME_PARSER] File extraction failed: {str(e)}")
+        logger.error(f"[RESUME_PARSER] Extraction failed: {str(e)}")
         raise ResumeNoText()
                 
     if len(text.strip()) < 50:
         logger.warning(f"[RESUME_PARSER] Minimal text found for user={user_id}")
         raise ResumeNoText()
-        
-    # Token optimization: 10000 chars fits well in 4096 context window
-    if len(text) > 10000:
-        text = text[:10000]
-        
-    user_prompt = RESUME_USER_PROMPT.format(resume_text=text)
+
+    formatted_prompt = RESUME_EXTRACTION_PROMPT.format(resume_text=text)
+    
+    response = await provider.complete([{"role": "user", "content": formatted_prompt}])
+    
+    clean_json = response.strip()
+    if "```" in clean_json:
+        clean_json = clean_json.split("```")[1]
+        if clean_json.startswith("json"):
+            clean_json = clean_json[4:]
+    clean_json = clean_json.strip()
     
     try:
-        logger.info(f"[RESUME_PARSER] Prompting LLM for extraction...")
-        parsed_dict = await llm_provider.complete_json(
-            messages=[
-                {"role": "system", "content": RESUME_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
-            ],
-            config=llm_config.RESUME_PARSE
-        )
+        parsed_dict = json.loads(clean_json)
+    except json.JSONDecodeError:
+        logger.error(f"[RESUME_PARSER] JSON parse failed. Response preview: {response[:200]}")
+        raise GeminiParseError()
         
-        # Pydantic validation 
-        try:
-            # 1. HEALING: Fix common structural issues BEFORE validation
-            if isinstance(parsed_dict.get("total_experience_years"), str):
-                try:
-                    import re
-                    # Extract first number from string like "5 years"
-                    num_match = re.search(r"\d+", parsed_dict["total_experience_years"])
-                    parsed_dict["total_experience_years"] = int(num_match.group(0)) if num_match else 0
-                except:
-                    parsed_dict["total_experience_years"] = 0
-            
-            # Ensure primary_role is a string
-            if not parsed_dict.get("primary_role"):
-                parsed_dict["primary_role"] = "Professional"
-
-            # Fix Education: Ensure 'level' is present and valid
-            if isinstance(parsed_dict.get("education"), list):
-                level_map = {
-                    "undergraduate": "graduate",
-                    "bachelors": "graduate",
-                    "bachelor": "graduate",
-                    "diploma": "vocational",
-                    "phd": "postgraduate",
-                    "doctoral": "postgraduate",
-                    "doctorate": "postgraduate",
-                }
-                valid_levels = {level.value for level in EducationLevel}
-                for edu in parsed_dict["education"]:
-                    lvl = str(edu.get("level") or "").lower().strip()
-                    if lvl in level_map:
-                        lvl = level_map[lvl]
-                    if lvl not in valid_levels:
-                        lvl = "graduate" # Default fallback
-                    edu["level"] = lvl
-
-            # Fix Experience: Ensure lists exist
-            if isinstance(parsed_dict.get("experience"), list):
-                for exp in parsed_dict["experience"]:
-                    if not isinstance(exp.get("responsibilities"), list): exp["responsibilities"] = []
-                    if not isinstance(exp.get("technologies"), list): exp["technologies"] = []
-
-            # Fix Skills: Ensure category and proficiency
-            if isinstance(parsed_dict.get("skills"), list):
-                for sk in parsed_dict["skills"]:
-                    if not sk.get("category"): sk["category"] = "technical"
-                    if not sk.get("proficiency"): sk["proficiency"] = "Intermediate"
-
-            # Ensure summary and analysis
-            if not parsed_dict.get("summary"): parsed_dict["summary"] = "Experienced professional."
-            if not parsed_dict.get("skill_gap_analysis"): parsed_dict["skill_gap_analysis"] = "Continuous learning recommended."
-
-            # Ensure arrays are actual arrays
-            for list_field in ["education", "experience", "skills", "strengths", "weaknesses", "career_suggestions"]:
-                if list_field in parsed_dict and not isinstance(parsed_dict[list_field], list):
-                    parsed_dict[list_field] = []
-
-            validated_data = ResumeData(**parsed_dict)
-            final_dict = validated_data.model_dump()
-        except Exception as ve:
-            logger.warning(f"[RESUME_PARSER] Validation failed: {str(ve)}. Using healed dict.")
-            # If Pydantic still fails, we use the dict as-is (best effort)
-            final_dict = parsed_dict
-            # Final safety net for critical fields
-            if "skills" not in final_dict: final_dict["skills"] = []
-            if "primary_role" not in final_dict: final_dict["primary_role"] = "Professional"
-
-    except AppError as e:
-        logger.error(f"[RESUME_PARSER] AI Extraction failed: {e.message}")
-        raise
-    except Exception as e:
-        logger.error(f"[RESUME_PARSER] Unexpected parsing failure: {str(e)}")
-        # Log the raw text to see if it was too messy
-        logger.debug(f"[RESUME_PARSER] Resume text snippet: {text[:500]}...")
-        raise AppError("LLM_PARSE_ERROR", f"Could not parse resume data. Error: {str(e)}")
-        
-    logger.info(f"[RESUME_PARSER] Success for user={user_id}. Skills={len(final_dict.get('skills', []))}")
+    logger.info(f"[RESUME_PARSER] Success for user={user_id}. Skills={len(parsed_dict.get('skills', []))}")
     
     return {
-        "parsed": final_dict,
+        "parsed": parsed_dict,
         "raw_text": text
     }
+
+async def score_ats(text: str, provider: ILLMProvider) -> dict:
+    """Deterministic ATS scoring in <1ms without burning LLM calls."""
+    import re
+    has_email = bool(re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}", text))
+    has_phone = bool(re.search(r"(?:\+?91[\-\s]?)?[6-9]\d{9}", text))
+    has_skills = bool(re.search(r"(skills|technical skills|competencies)", text, re.I))
+    has_exp = bool(re.search(r"(experience|work experience|employment)", text, re.I))
+    has_edu = bool(re.search(r"(education|academics|qualifications)", text, re.I))
+    
+    fmt = 30 if (has_email and has_phone) else 15
+    kw = 32 if (has_skills and has_exp) else 18
+    imp = 28 if re.search(r"\d+[%kK+]", text) else 15
+    total = fmt + kw + imp
+
+    suggestions = []
+    if not has_email or not has_phone:
+        suggestions.append("Add verified phone and professional email prominently at the top.")
+    if imp < 20:
+        suggestions.append("Add quantified metrics (e.g., percentages, scale, cost saved) to experience bullets.")
+    if not has_skills:
+        suggestions.append("Create a dedicated 'Technical Skills' section for ATS parsing.")
+
+    return {
+        "score": total,
+        "breakdown": {"formatting": fmt, "keywords": kw, "impact": imp},
+        "suggestions": suggestions
+    }
+
+async def extract_india_details(text: str, provider: ILLMProvider) -> dict:
+    """Deterministic Indian qualification and exam extraction in <0.1ms."""
+    import re
+    exams = [m for m in ["GATE", "UPSC", "JEE", "CAT", "NET", "SSC"] if re.search(rf"{m}", text, re.I)]
+    certs = [m for m in ["NPTEL", "CDAC", "ITI", "Polytechnic", "PMKVY", "NSDC", "Skill India", "AWS", "Azure", "GCP", "Docker"] if re.search(rf"{m}", text, re.I)]
+    return {"exams": exams, "certificates": certs}
+
+async def detect_achievements(text: str, provider: ILLMProvider) -> dict:
+    """Deterministic metric-bearing achievement isolation in <0.1ms."""
+    from app.modules.resume_analysis.deterministic import extract_quantified_achievements
+    raw_achievements = extract_quantified_achievements(text)
+    return {"achievements": raw_achievements[:6]}
+
+async def rewrite_bullets(bullets: list[str], provider: ILLMProvider) -> dict:
+    response = await provider.complete(
+        [{"role": "user", "content": BULLET_REWRITE_PROMPT.format(bullets=json.dumps(bullets))}]
+    )
+    return _parse_json(response)
+
+def _parse_json(data: str) -> dict:
+    clean = data.strip()
+    if "```" in clean:
+        clean = clean.split("```")[1]
+        if clean.startswith("json"): clean = clean[4:]
+    clean = clean.strip()
+    try:
+        return json.loads(clean)
+    except:
+        logger.error(f"[AI_PARSER] Failed to parse JSON from: {data[:100]}")
+        return {}

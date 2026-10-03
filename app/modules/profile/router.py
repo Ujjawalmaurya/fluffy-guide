@@ -3,28 +3,25 @@ from fastapi import APIRouter, Depends, UploadFile, File
 
 from app.modules.profile.service import ProfileService
 from app.modules.profile.repository import ProfileRepository
-from app.schemas.request.profile import ProfileUpdateRequest
-from app.schemas.response.profile import (
-    ProfileResponse, ParsedResumeResponse, CompletionScoreResponse
-)
-from app.shared.dependencies import get_db, get_current_user, get_structured_provider
-from app.shared.response_models import ok, APIResponse
+from app.modules.profile.schemas import ProfileUpdateIn, BulletRewriteIn, BulletRewriteOut
+from app.shared.dependencies import get_db, get_current_user
+from app.shared.response_models import ok
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
 
-def _get_service(db=Depends(get_db), llm=Depends(get_structured_provider)) -> ProfileService:
-    return ProfileService(ProfileRepository(db), llm)
+def _get_service(db=Depends(get_db)) -> ProfileService:
+    return ProfileService(ProfileRepository(db))
 
 
-@router.get("/me", response_model=APIResponse[ProfileResponse])
+@router.get("/me")
 async def get_profile(current_user: dict = Depends(get_current_user), service: ProfileService = Depends(_get_service)):
     return ok(data=service.get_profile(current_user["id"]))
 
 
-@router.patch("/me", response_model=APIResponse[ProfileResponse])
+@router.patch("/me")
 async def update_profile(
-    body: ProfileUpdateRequest,
+    body: ProfileUpdateIn,
     current_user: dict = Depends(get_current_user),
     service: ProfileService = Depends(_get_service),
 ):
@@ -32,7 +29,7 @@ async def update_profile(
     return ok(data=updated, message="Profile updated.")
 
 
-@router.post("/resume", response_model=APIResponse[ParsedResumeResponse])
+@router.post("/resume")
 async def upload_resume(
     resume: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
@@ -48,9 +45,18 @@ async def upload_resume(
     return ok(data=result)
 
 
-@router.get("/completion-score", response_model=APIResponse[CompletionScoreResponse])
+@router.get("/completion-score")
 async def get_completion(
     current_user: dict = Depends(get_current_user),
     service: ProfileService = Depends(_get_service),
 ):
     return ok(data=service.get_completion_score(current_user["id"]))
+
+
+@router.post("/rewrite-bullets", response_model=BulletRewriteOut)
+async def rewrite_bullets(
+    body: BulletRewriteIn,
+    current_user: dict = Depends(get_current_user),
+    service: ProfileService = Depends(_get_service),
+):
+    return await service.rewrite_bullets(current_user["id"], body.bullets)

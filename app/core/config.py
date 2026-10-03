@@ -3,7 +3,10 @@ Backend config — reads all settings from .env via Pydantic BaseSettings.
 Single source of truth for env vars. Import `settings` everywhere.
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, AliasChoices
+
+
+from app.core.ai_models import AIModel
 
 
 class Settings(BaseSettings):
@@ -12,23 +15,21 @@ class Settings(BaseSettings):
     # Supabase
     supabase_url: str
     supabase_service_key: str
+    supabase_anon_key: str
+
+    # Resend
+    resend_api_key: str = ""
+    resend_from_email: str = "SANKALP <onboarding@resend.dev>"
 
     # JWT
     jwt_secret_key: str
-    jwt_algorithm: str = "HS256"
-    jwt_access_expire_minutes: int = 360
-    jwt_refresh_expire_days: int = 7
-
-    # OTP
-    otp_expire_minutes: int = 10
-    otp_length: int = 6
 
     # SarvamAI
     sarvam_api_key: str = ""
-    sarvam_base_url: str = "https://api.sarvam.ai/v1"
 
     # Admin
     admin_secret: str
+    demo_password: str = "12345678"
 
     # App
     app_env: str = "development"
@@ -37,19 +38,58 @@ class Settings(BaseSettings):
     log_level: str = "DEBUG"
     cors_origins: str = "http://localhost:5173"
 
-    # Ollama & Hardware Profile
-    ollama_host: str = "http://localhost:11434"
-    use_rtx_4050: bool = True  # True = RTX 4050 (6GB VRAM), False = GTX 1050 (4GB VRAM)
+    # AI Provider Keys
+    gemini_api_key: str = Field(default="", validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY"))
+    groq_api_key: str = ""
+    varcel_ai_key: str = ""
+    enable_jev: bool = True
 
-    # Assessment
-    assessment_max_questions: int = 11
-    assessment_min_questions: int = 9
-    assessment_max_retakes: int = 2
-    assessment_retake_cooldown_hours: int = 24
+    # Local Ollama
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5:3b"
+    ollama_context_length: int = 4096
 
-    # Resume Analysis
-    resume_analysis_max_file_size_mb: int = 5
-    resume_bullet_daily_limit: int = 10
+    # ── Hardcoded config below ──────────
+    @property
+    def jwt_algorithm(self) -> str: return "HS256"
+    @property
+    def jwt_access_expire_minutes(self) -> int: return 30
+    @property
+    def jwt_refresh_expire_days(self) -> int: return 7
+
+    @property
+    def otp_expire_minutes(self) -> int: return 10
+    @property
+    def otp_length(self) -> int: return 6
+
+    @property
+    def sarvam_base_url(self) -> str: return "https://api.sarvam.ai/v1"
+    @property
+    def sarvam_model(self) -> str: return "sarvam-m"
+
+    @property
+    def gemini_model(self) -> str: return AIModel.GEMINI_1_5_FLASH
+    @property
+    def gemini_max_retries(self) -> int: return 3
+    @property
+    def gemini_rpm_limit(self) -> int: return 12
+
+    @property
+    def groq_model(self) -> str: return AIModel.LLAMA_3_3_70B
+
+    @property
+    def assessment_max_questions(self) -> int: return 11
+    @property
+    def assessment_min_questions(self) -> int: return 9
+    @property
+    def assessment_max_retakes(self) -> int: return 2
+    @property
+    def assessment_retake_cooldown_hours(self) -> int: return 24
+
+    @property
+    def resume_analysis_max_file_size_mb(self) -> int: return 5
+    @property
+    def resume_bullet_daily_limit(self) -> int: return 10
 
     # Derived — parsed from cors_origins string
     @property

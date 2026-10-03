@@ -4,12 +4,11 @@ Keeps frontend parsing predictable.
 """
 from typing import Any, Generic, TypeVar
 from pydantic import BaseModel
-from app.schemas.base import BaseSchema
 
 T = TypeVar("T")
 
 
-class APIResponse(BaseSchema, Generic[T]):
+class APIResponse(BaseModel, Generic[T]):
     success: bool = True
     data: T | None = None
     error_code: str | None = None

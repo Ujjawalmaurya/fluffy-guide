@@ -1,2 +1,0 @@
-class SkillProfileException(Exception):
-    pass

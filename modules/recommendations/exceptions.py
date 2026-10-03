@@ -1,2 +1,0 @@
-class RecommendationException(Exception):
-    pass

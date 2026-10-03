@@ -1,10 +1,12 @@
 """
-Question engine — builds prompt, parses returned JSON questions via Ollama.
+Question engine — builds SarvamAI prompt, parses returned JSON questions.
 Isolated here so question format can change without touching service.py.
 """
+import json
+import httpx
+from app.core.config import settings
 from app.core.logger import get_logger
-from app.core import llm_config
-from app.modules.ai_chat.providers.base import IStructuredProvider
+from app.shared.exceptions import AIProviderUnavailable, AIResponseParseError
 
 log = get_logger("ONBOARDING")
 
@@ -20,56 +22,43 @@ USER_TYPE_HINTS = {
 
 
 def build_system_prompt() -> str:
-    return f"""ROLE: You are an elite career assessment expert for SkillBridge AI, focusing on India's underserved workforce.
+    return """You are a career assessment expert for India's workforce.
+Your task is to generate exactly 6 career assessment questions based on the user's profile.
 
-TASK: Generate exactly 6 career assessment questions based on the user's profile.
-
-JSON STRUCTURE:
+CRITICAL INSTRUCTION: You MUST return ONLY a valid JSON array. Do not include any conversational text, explanations, or formatting blocks.
+The JSON array must have this exact structure:
 [
-  {{
+  {
     "id": "q1",
     "question": "...",
     "type": "text|mcq|rating",
     "options": ["...", "..."]
-  }}
+  }
 ]
 
-RULES:
+Rules:
 - Questions should assess current skills, work experience, and career goals.
-- Use "mcq" ONLY if options are fixed.
-- For "rating", use ["1","2","3","4","5"].
-- For "text", options MUST be [].
-- Language MUST match the user's requested language.
-
-{llm_config.CONCISENESS_INSTRUCTION}
-"""
+- STRICT ALIGNMENT: If a question asks to describe, explain, or answer in words, type MUST be "text" and options MUST be [].
+- Rating questions MUST strictly be phrased as a rating scale (e.g. "Rate your experience with X from 1 to 5:"). NEVER ask for a description or words if type is "rating".
+- For "rating", options MUST be ["1","2","3","4","5"].
+- For "mcq", options MUST contain 3 to 5 realistic choices.
+- For "text", options MUST be []."""
 
 def build_user_prompt(user_type: str, state: str, career_interests: list[str], language: str) -> str:
     hint = USER_TYPE_HINTS.get(user_type, "Ask about skills, goals, and work experience.")
-    interests_str = ", ".join(
-        str(i.get("label") if isinstance(i, dict) else i)
-        for i in career_interests
-    ) if career_interests else "general workforce"
-    lang_instruction = "Respond in Hindi." if language == "hi" else "Respond in English."
+    interests_str = ", ".join(career_interests) if career_interests else "general workforce"
+    lang_instruction = "Respond in Hindi only." if language == "hi" else "Respond in English."
 
-    return f"""USER PROFILE:
-- Type: {user_type}
-- State: {state}
-- Interests: {interests_str}
-- Language: {lang_instruction}
+    return f"""Profile: {user_type} in {state}
+Interests: {interests_str}
+Language: {lang_instruction}
 
-CONTEXT: {hint}
-Generate 6 questions now."""
+Context: {hint}
+Generate the 6 questions now."""
 
 
-async def generate_questions(
-    llm_provider: IStructuredProvider,
-    user_type: str, 
-    state: str, 
-    career_interests: list[str], 
-    language: str
-) -> list[dict]:
-    """Call local LLM and return parsed question list."""
+async def generate_questions(user_type: str, state: str, career_interests: list[str], language: str) -> list[dict]:
+    """Generate career assessment questions via local Ollama provider."""
     system_prompt = build_system_prompt()
     user_prompt = build_user_prompt(user_type, state, career_interests, language)
 
@@ -78,10 +67,28 @@ async def generate_questions(
         {"role": "user", "content": user_prompt}
     ]
 
-    questions = await llm_provider.complete_json(
-        messages=messages,
-        config=llm_config.ONBOARDING_Q_GEN
-    )
+    try:
+        from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
+        ollama = get_ollama_instance()
+        questions = await ollama.complete_json(messages, temperature=0.5, max_tokens=1500)
+        if isinstance(questions, dict) and "questions" in questions:
+            questions = questions["questions"]
+        elif not isinstance(questions, list):
+            questions = []
 
-    log.info(f"Generated {len(questions)} questions for {user_type} via Ollama ({llm_config.ONBOARDING_Q_GEN.model})")
-    return questions
+        from app.modules.onboarding.question_sanitizer import sanitize_question_list
+        questions = sanitize_question_list(questions)
+        log.info(f"Generated {len(questions)} questions for {user_type} via local Ollama ({ollama.model})")
+        return questions
+    except Exception as e:
+        log.error(f"Failed to generate questions with local Ollama: {e}")
+        fallback = [
+            {"id": "q1", "question": "Describe your daily work responsibilities and the primary tools you use.", "type": "text", "options": []},
+            {"id": "q2", "question": "On a scale of 1 to 5, rate your proficiency with computer applications.", "type": "rating", "options": ["1", "2", "3", "4", "5"]},
+            {"id": "q3", "question": "Which work environment suits you best?", "type": "mcq", "options": ["Office desk work", "Field and on-site", "Hybrid / remote", "Factory or workshop"]},
+            {"id": "q4", "question": "In a few words, tell us about a challenging project or task you completed.", "type": "text", "options": []},
+            {"id": "q5", "question": "What is your main career goal for the next 12 to 24 months?", "type": "text", "options": []},
+            {"id": "q6", "question": "On a scale of 1 to 5, rate your confidence in learning new technical skills quickly.", "type": "rating", "options": ["1", "2", "3", "4", "5"]},
+        ]
+        from app.modules.onboarding.question_sanitizer import sanitize_question_list
+        return sanitize_question_list(fallback)
