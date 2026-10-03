@@ -46,35 +46,46 @@ async def get_current_user(
             detail={"success": False, "error_code": "AUTH_TOKEN_INVALID", "message": "Invalid or expired token.", "details": {}}
         )
 
-    result = db.table("users").select("*").eq("id", user_id).single().execute()
-    if not result.data:
+    try:
+        result = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
+        user_data = result.data
+    except Exception:
+        user_data = None
+
+    if not user_data:
+        # Check if user is a demo persona
+        from app.modules.demo.personas import PERSONA_MAP
+        for p in PERSONA_MAP.values():
+            if p["id"] == user_id:
+                return {
+                    "id": p["id"],
+                    "email": p["email"],
+                    "user_type": p["type"],
+                    "preferred_lang": "en",
+                    "onboarding_done": True,
+                    "full_name": p["name"],
+                }
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"success": False, "error_code": "AUTH_UNAUTHORIZED", "message": "User not found.", "details": {}}
         )
 
-    return result.data
+    return user_data
 
 
-def require_user_type(allowed_types: list[str]):
+async def get_officer_user(current_user: dict = Depends(get_current_user)) -> dict:
     """
-    Dependency factory to restrict routes by user type.
-    Example: Depends(require_user_type(["org_ngo"]))
+    Restricts access to users with 'government_officer' or 'admin' user_type.
     """
-    async def dependency(current_user: dict = Depends(get_current_user)):
-        if current_user.get("user_type") not in allowed_types:
-            log.warning(f"Access denied for user {current_user['id']} (type: {current_user.get('user_type')}). Required: {allowed_types}")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "success": False,
-                    "error_code": "FORBIDDEN",
-                    "message": f"Access denied. This endpoint is restricted to {allowed_types}.",
-                    "details": {}
-                }
-            )
-        return current_user
-    return dependency
+    user_type = current_user.get("user_type", "individual_youth")
+    if user_type not in ["government_officer", "admin"]:
+        log.warning(f"Unauthorized government access attempt by user {current_user.get('id')}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"success": False, "error_code": "OFFICER_UNAUTHORIZED", "message": "Officer-only access required.", "details": {}}
+        )
+    return current_user
 
 
 async def get_admin(x_admin_secret: str = Header(None)) -> bool:
@@ -89,18 +100,3 @@ async def get_admin(x_admin_secret: str = Header(None)) -> bool:
             detail={"success": False, "error_code": "ADMIN_UNAUTHORIZED", "message": "Invalid admin secret.", "details": {}}
         )
     return True
-
-
-from app.modules.ai_chat.providers.ollama_provider import get_ollama_instance
-from app.modules.ai_chat.providers.base import ICompletionProvider, IStructuredProvider
-
-
-def get_completion_provider() -> ICompletionProvider:
-    """Returns the completion (reasoning) LLM provider instance."""
-    return get_ollama_instance()
-
-
-def get_structured_provider() -> IStructuredProvider:
-    """Returns the structured (extraction) LLM provider instance."""
-    return get_ollama_instance()
-

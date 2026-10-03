@@ -1,5 +1,5 @@
 # [LEARNING_RESOURCES] DB queries only. No business logic.
-from app.core.database import get_async_supabase
+from app.core.database import get_supabase
 from app.core.logger import get_logger
 
 logger = get_logger("LEARNING_RESOURCES")
@@ -9,8 +9,8 @@ async def find_by_skill_tag(tag: str, limit: int = 5) -> list:
     Finds active resources where skill_tags contains the given tag.
     Uses PostgreSQL array containment. Case-insensitive match.
     """
-    supabase = await get_async_supabase()
-    result = await (
+    supabase = get_supabase()
+    result = (
         supabase.table("learning_resources")
         .select("*")
         .contains("skill_tags", [tag.lower()])
@@ -26,12 +26,13 @@ async def get_all_filtered(
     language: str = None,
     skill_tag: str = None
 ) -> list:
-    supabase = await get_async_supabase()
+    supabase = get_supabase()
     query = (
         supabase.table("learning_resources")
         .select("*")
         .eq("is_active", True)
     )
+    
     if category:
         query = query.eq("category", category)
     if is_free is not None:
@@ -41,12 +42,11 @@ async def get_all_filtered(
     if skill_tag:
         query = query.contains("skill_tags", [skill_tag.lower()])
         
-    result = await query.execute()
-    return result.data or []
+    return query.execute().data or []
 
 async def get_by_id(resource_id: str) -> dict | None:
-    supabase = await get_async_supabase()
-    result = await (
+    supabase = get_supabase()
+    result = (
         supabase.table("learning_resources")
         .select("*")
         .eq("id", resource_id)
@@ -56,14 +56,14 @@ async def get_by_id(resource_id: str) -> dict | None:
     return result.data[0] if result.data else None
 
 async def create(data: dict) -> dict:
-    supabase = await get_async_supabase()
-    result = await supabase.table("learning_resources").insert(data).execute()
+    supabase = get_supabase()
+    result = supabase.table("learning_resources").insert(data).execute()
     logger.info(f"[LEARNING_RESOURCES] Created: {data.get('name')}")
     return result.data[0]
 
 async def update(resource_id: str, data: dict) -> dict:
-    supabase = await get_async_supabase()
-    result = await (
+    supabase = get_supabase()
+    result = (
         supabase.table("learning_resources")
         .update(data)
         .eq("id", resource_id)
@@ -72,19 +72,19 @@ async def update(resource_id: str, data: dict) -> dict:
     return result.data[0]
 
 async def soft_delete(resource_id: str) -> bool:
-    supabase = await get_async_supabase()
-    await supabase.table("learning_resources").update(
+    supabase = get_supabase()
+    supabase.table("learning_resources").update(
         {"is_active": False}
     ).eq("id", resource_id).execute()
     logger.info(f"[LEARNING_RESOURCES] Soft deleted: {resource_id}")
     return True
 
 async def bulk_create(items: list[dict]) -> dict:
-    supabase = await get_async_supabase()
+    supabase = get_supabase()
     created, failed = 0, 0
     for item in items:
         try:
-            await supabase.table("learning_resources").insert(item).execute()
+            supabase.table("learning_resources").insert(item).execute()
             created += 1
         except Exception as e:
             logger.error(f"[LEARNING_RESOURCES] Bulk insert failed: {e}")
@@ -95,5 +95,3 @@ async def bulk_create(items: list[dict]) -> dict:
         f"created={created} failed={failed}"
     )
     return {"created": created, "failed": failed}
-
-

@@ -1,10 +1,10 @@
 # [GAP_ANALYSIS] DB queries only.
 
-from app.core.database import get_async_supabase
+from app.core.database import get_supabase
 
 async def get_by_user_id(user_id: str) -> dict | None:
-    db = await get_async_supabase()
-    result = await (
+    db = get_supabase()
+    result = (
         db.table("gap_analysis_reports")
         .select("*")
         .eq("user_id", user_id)
@@ -14,17 +14,17 @@ async def get_by_user_id(user_id: str) -> dict | None:
     return result.data[0] if result.data else None
 
 async def upsert(user_id: str, data: dict) -> dict:
-    db = await get_async_supabase()
+    db = get_supabase()
     existing = await get_by_user_id(user_id)
     if existing:
-        result = await (
+        result = (
             db.table("gap_analysis_reports")
             .update(data)
             .eq("user_id", user_id)
             .execute()
         )
     else:
-        result = await (
+        result = (
             db.table("gap_analysis_reports")
             .insert({"user_id": user_id, **data})
             .execute()
@@ -32,9 +32,7 @@ async def upsert(user_id: str, data: dict) -> dict:
     return result.data[0] if result.data else {}
 
 async def mark_stale(user_id: str) -> None:
-    db = await get_async_supabase()
-    await db.table("gap_analysis_reports").update(
+    db = get_supabase()
+    db.table("gap_analysis_reports").update(
         {"is_stale": True}
     ).eq("user_id", user_id).execute()
-
-

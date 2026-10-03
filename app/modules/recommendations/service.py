@@ -1,0 +1,151 @@
+"""
+service.py — Hybrid job recommendation service using vector similarity and fallback category matching.
+"""
+import asyncio
+from typing import List, Dict, Any
+from app.core.logger import logger
+from app.core.database import get_supabase
+from app.core.ai_models import get_embedding_model
+from app.modules.recommendations.career_identity import CareerIdentityService
+
+
+class JobRecommendationService:
+    """Handles job recommendations using vector similarity and hybrid matching strategies."""
+
+    @staticmethod
+    async def get_recommendations(
+        user_id: str,
+        limit: int = 5,
+        match_threshold: float = 0.5,
+    ) -> List[Dict[str, Any]]:
+        """Fetches top job recommendations for a user based on their career identity."""
+        supabase = get_supabase()
+
+        # 1. Get user profile (including embedding)
+        profile_res = (
+            supabase.table("user_profiles")
+            .select("identity_embedding, state")
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+
+        if not profile_res.data:
+            logger.warning(f"No profile found for user {user_id}")
+            return []
+
+        profile = profile_res.data
+        embedding = profile.get("identity_embedding")
+        user_state = profile.get("state")
+
+        # 2. If no embedding, generate it now (lazy generation)
+        if not embedding:
+            logger.info(f"Identity embedding missing for {user_id}, generating...")
+            career_service = CareerIdentityService()
+            await career_service.generate_and_store_identity(user_id)
+
+            profile_res = (
+                supabase.table("user_profiles")
+                .select("identity_embedding")
+                .eq("user_id", user_id)
+                .single()
+                .execute()
+            )
+            embedding = profile_res.data.get("identity_embedding") if profile_res.data else None
+
+        if not embedding:
+            logger.error(f"Failed to obtain embedding for user {user_id}")
+            return []
+
+        # 3. Call RPC function for vector similarity matching
+        try:
+            recommendations = supabase.rpc("match_jobs", {
+                "query_embedding": embedding,
+                "match_threshold": match_threshold,
+                "match_count": limit,
+                "filter_state": user_state,
+            }).execute()
+
+            raw_jobs = recommendations.data or []
+            if not raw_jobs:
+                logger.info(f"No vector matches found for user {user_id}")
+                raw_jobs = await JobRecommendationService._fallback_recommendations(user_id, limit)
+
+            from app.modules.ai_chat.providers.jev_provider import JevProvider
+            jev = JevProvider()
+            score_results = await asyncio.gather(*[jev.score_job_match(profile, job) for job in raw_jobs])
+            scored_jobs = []
+            for job, score_res in zip(raw_jobs, score_results):
+                job_copy = dict(job)
+                job_copy["match_score"] = score_res.get("match_score", 50)
+                job_copy["meets_skills"] = score_res.get("meets_skills", True)
+                job_copy["matched_skills"] = score_res.get("matched_skills", [])
+                job_copy["experience_fit"] = score_res.get("experience_fit", "adequate")
+                scored_jobs.append(job_copy)
+
+            scored_jobs.sort(key=lambda j: j.get("match_score", 0), reverse=True)
+            return scored_jobs[:limit]
+
+        except Exception as e:
+            logger.error(f"Error during vector matching: {str(e)}")
+            return await JobRecommendationService._fallback_recommendations(user_id, limit)
+
+    @staticmethod
+    async def _fallback_recommendations(user_id: str, limit: int) -> List[Dict[str, Any]]:
+        """Simple keyword/category fallback when vector search fails or has no matches."""
+        supabase = get_supabase()
+
+        prefs_res = (
+            supabase.table("user_preferences")
+            .select("career_interests")
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+        if not prefs_res.data or not prefs_res.data.get("career_interests"):
+            jobs = (
+                supabase.table("job_listings")
+                .select("*")
+                .eq("is_active", True)
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            return jobs.data
+
+        interests = prefs_res.data.get("career_interests")
+        jobs = (
+            supabase.table("job_listings")
+            .select("*")
+            .eq("is_active", True)
+            .in_("category", interests)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return jobs.data
+
+    @staticmethod
+    async def embed_all_jobs():
+        """Embeds all existing jobs that don't have embeddings."""
+        supabase = get_supabase()
+        model = get_embedding_model()
+
+        jobs_res = (
+            supabase.table("job_listings")
+            .select("id, title, description, category")
+            .is_("job_embedding", "null")
+            .execute()
+        )
+
+        if not jobs_res.data:
+            logger.info("All jobs are already embedded.")
+            return
+
+        logger.info(f"Embedding {len(jobs_res.data)} jobs...")
+        for job in jobs_res.data:
+            text_to_embed = f"{job['title']}. {job['category']}. {job['description']}"
+            embedding = model.encode(text_to_embed).tolist()
+            supabase.table("job_listings").update({"job_embedding": embedding}).eq("id", job["id"]).execute()
+
+        logger.info("Job embedding complete.")

@@ -2,61 +2,54 @@
 # Always picks resources from DB — never lets Gemini invent them.
 
 import json
-import asyncio
 from app.modules.learning_resources import repository as res_repo
 from app.core.logger import get_logger
 
 logger = get_logger("GAP_ANALYSIS")
 
-from app.core.llm_config import CONCISENESS_INSTRUCTION
+ROADMAP_PROMPT = """
+You are a career development expert for India's workforce.
+Build a practical week-by-week learning roadmap.
+Return ONLY valid JSON. No markdown. No preamble. No explanation.
 
-ROADMAP_SYSTEM_PROMPT = f"""ROLE: You are an elite career development expert for India's workforce, specializing in SkillBridge AI.
-
-TASK: Build a practical week-by-week learning roadmap.
-JSON ONLY. No prose. No markdown. No explanation.
-
-RULES:
-- Plan 8 to 12 weeks total.
-- Max 2-3 hours per day commitment.
-- Blue-collar workers: prefer vocational, hands-on resources.
-- Youth: include one soft skill week alongside technical weeks.
-- Each week focuses on ONE skill only.
-- Milestones must be concrete and personally verifiable.
-- motivational_note must be specific to this person, not generic.
-- USE ONLY the provided resources. Never invent URLs or IDs.
-
-{CONCISENESS_INSTRUCTION}
-"""
-
-ROADMAP_USER_PROMPT = """USER PROFILE:
+User profile:
 - Name: {name}
-- Type: {user_type}
+- User type: {user_type}
 - State: {state}
-- Interests: {interests}
+- Career interests: {interests}
 
-TOP SKILL GAPS:
+Top skill gaps to address (in priority order):
 {top_gaps}
 
-AVAILABLE RESOURCES:
+Available learning resources (USE ONLY THESE — never invent):
 {resources_json}
 
-Return ONLY this JSON structure:
+Rules:
+- Plan 8 to 12 weeks total
+- Max 2-3 hours per day commitment
+- Blue-collar workers: prefer vocational, hands-on resources
+- Youth: include one soft skill week alongside technical weeks
+- Each week focuses on ONE skill only
+- Milestones must be concrete and personally verifiable
+- motivational_note must be specific to this person, not generic
+
+Return ONLY this JSON:
 {{
   "total_weeks": 10,
   "weekly_commitment_hours": 2,
   "roadmap": [
     {{
       "week": 1,
-      "focus_skill": "...",
-      "goal": "...",
-      "action": "...",
-      "resource_id": "...",
-      "resource_name": "...",
-      "resource_url": "...",
-      "milestone": "..."
+      "focus_skill": "skill name",
+      "goal": "what they can do by end of this week",
+      "action": "specific daily action in plain simple language",
+      "resource_id": "uuid from provided resources or null",
+      "resource_name": "name from provided list or null",
+      "resource_url": "url from provided list or null",
+      "milestone": "I will know I succeeded when I can..."
     }}
   ],
-  "motivational_note": "..."
+  "motivational_note": "one specific encouraging sentence"
 }}
 """
 
@@ -69,17 +62,15 @@ def _strip_fences(text: str) -> str:
         text = "\n".join(lines)
     return text.strip()
 
-from app.modules.ai_chat.providers.base import IStructuredProvider
-
 async def build_roadmap(
     user_id: str,
     gaps: list,
     user_profile_data: dict,
-    llm_provider: IStructuredProvider
+    gemini_provider
 ) -> tuple[dict, list]:
     """
     Fetches matching resources for top 5 gaps, then calls
-    LLM to generate a personalized week-by-week roadmap.
+    Gemini to generate a personalized week-by-week roadmap.
     Returns (roadmap_data, enriched_gaps_with_resource_ids).
     """
     top_gaps = gaps[:5]
@@ -89,16 +80,10 @@ async def build_roadmap(
     all_resources = []
     seen_ids = set()
 
-    # Fetch matching resources for all gaps concurrently
-    async def fetch_resources_for_gap(gap_item):
-        res = await res_repo.find_by_skill_tag(
-            gap_item["skill_name"], limit=3
+    for gap in top_gaps:
+        resources = await res_repo.find_by_skill_tag(
+            gap["skill_name"], limit=3
         )
-        return gap_item, res
-
-    results = await asyncio.gather(*(fetch_resources_for_gap(g) for g in top_gaps))
-
-    for gap, resources in results:
         gap["recommended_resources"] = [r["id"] for r in resources]
         enriched_gaps.append(gap)
         for r in resources:
@@ -112,13 +97,12 @@ async def build_roadmap(
             f"user={user_id}. Roadmap will have no resource links."
         )
 
-    user_prompt = ROADMAP_USER_PROMPT.format(
+    prompt = ROADMAP_PROMPT.format(
         name=user_profile_data.get("full_name", "there"),
         user_type=user_profile_data.get("user_type", "individual"),
         state=user_profile_data.get("state", "India"),
         interests=", ".join(
-            str(i.get("label") if isinstance(i, dict) else i)
-            for i in (user_profile_data.get("career_interests") or [])
+            user_profile_data.get("career_interests") or []
         ),
         top_gaps=json.dumps(
             [g["skill_name"] for g in top_gaps]
@@ -126,29 +110,16 @@ async def build_roadmap(
         resources_json=json.dumps(all_resources, default=str)
     )
 
-    from app.core.llm_config import LLM_TASKS
-    from app.schemas.internal.llm_outputs import RoadmapLLMOutput
-
-    roadmap_raw = await llm_provider.complete_json(
-        messages=[
-            {"role": "system", "content": ROADMAP_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt}
-        ],
-        config=LLM_TASKS["roadmap"]
+    response = await gemini_provider.complete(
+        [{"role": "user", "content": prompt}]
     )
 
+    clean = _strip_fences(response)
     try:
-        if not roadmap_raw:
-            raise ValueError("Empty response from LLM")
-        
-        # Validate using Pydantic model
-        roadmap_model = RoadmapLLMOutput.model_validate(roadmap_raw)
-        roadmap_data = roadmap_model.model_dump()
-        
-    except Exception as e:
-        logger.error(f"[GAP_ANALYSIS] Failed to validate roadmap JSON: {e}")
-        # Fallback to safe defaults
-        roadmap_data = RoadmapLLMOutput().model_dump()
+        roadmap_data = json.loads(clean)
+    except json.JSONDecodeError:
+        logger.error(f"[GAP_ANALYSIS] Failed to parse roadmap JSON: {clean[:200]}...")
+        roadmap_data = {"roadmap": [], "motivational_note": "Keep learning!"}
 
     logger.info(
         f"[GAP_ANALYSIS] Roadmap built for user={user_id}. "
